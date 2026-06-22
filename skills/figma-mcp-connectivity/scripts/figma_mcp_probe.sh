@@ -26,6 +26,8 @@ echo
 echo "== MCP initialize =="
 headers_file="$(mktemp)"
 body_file="$(mktemp)"
+list_headers_file=""
+list_body_file=""
 trap 'rm -f "$headers_file" "$body_file" "$list_headers_file" "$list_body_file"' EXIT
 
 curl --noproxy '*' -sS -D "$headers_file" -o "$body_file" \

@@ -1,4 +1,4 @@
 interface:
-  display_name: "Figma MCP D2C"
-  short_description: "Connect Figma MCP and generate MiniApp D2C pages."
-  default_prompt: "Help me verify Figma Desktop MCP, extract the selected frame, and generate a runnable MiniApp page with reusable UI design tokens."
+  display_name: "Figma MCP Connectivity"
+  short_description: "Set up and verify Figma Desktop MCP for D2C extraction."
+  default_prompt: "Help me verify Figma Desktop MCP and extract metadata, design context, variables, and a screenshot from the selected Figma frame."

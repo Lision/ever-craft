@@ -1,19 +1,39 @@
 ---
 name: figma-mcp-connectivity
-description: Use when Codex needs Figma Desktop MCP for design-to-code work, including MCP setup checks, selected frame extraction, or generating a runnable MiniApp page from Figma with @everly/miniapp-uidesign and @everly/miniapp-network.
+description: Use when Codex needs to set up, diagnose, verify, or use Figma Desktop MCP for D2C frame extraction, including metadata, design context, variables, and screenshots from the selected Figma node.
 ---
 
 # Figma MCP Connectivity
 
 ## Overview
 
-Use this before any Figma-driven D2C workflow. Prove the local Figma server, Codex MCP registration, and selected-node reads work before generating code.
+Use this before any Figma-driven D2C workflow. Prove the local Figma server, Codex MCP registration, tool availability, and selected-node reads work before using Figma design data.
 
-For the implementation phase that creates `@everly/miniapp-uidesign` and a runnable nutrition MiniApp page, read [references/nutrition-miniapp-generation.md](references/nutrition-miniapp-generation.md) after the Figma frame has been extracted.
+This skill only covers Figma MCP connectivity and extraction. Do not include application implementation, design-system coding, or product-specific data mapping here.
 
 ## Workflow
 
-### 1. Check The Local Figma Server
+### 1. Run The Probe First
+
+Run the bundled probe:
+
+```bash
+skills/figma-mcp-connectivity/scripts/figma_mcp_probe.sh
+```
+
+Run from the repository that contains the skill, or pass the absolute path to the script.
+
+If the probe shows:
+
+- `127.0.0.1:3845` is listening
+- `codex mcp get figma-desktop` is registered
+- `tools/list` includes `get_metadata`, `get_design_context`, `get_screenshot`, and `get_variable_defs`
+
+then the environment is ready. Skip setup and go directly to [Read The Selected Frame](#5-read-the-selected-frame).
+
+If any check fails, follow the relevant setup section below.
+
+### 2. Start The Local Figma Server
 
 Run:
 
@@ -30,7 +50,7 @@ If empty, tell the user to:
 
 Do not continue until `127.0.0.1:3845` is listening.
 
-### 2. Register Codex MCP
+### 3. Register Codex MCP
 
 Check:
 
@@ -48,7 +68,7 @@ codex mcp list
 
 Expected: `figma-desktop` is enabled and points to `http://127.0.0.1:3845/mcp`.
 
-### 3. Bypass Local Proxy For Manual HTTP Checks
+### 4. Bypass Local Proxy For Manual HTTP Checks
 
 Shell environments may have `http_proxy`, `https_proxy`, or `all_proxy` set. If curl to localhost returns `502 Bad Gateway`, retry with:
 
@@ -56,15 +76,7 @@ Shell environments may have `http_proxy`, `https_proxy`, or `all_proxy` set. If 
 curl --noproxy '*' ...
 ```
 
-Use the bundled probe for a deterministic check:
-
-```bash
-skills/figma-mcp-connectivity/scripts/figma_mcp_probe.sh
-```
-
-Run from the repository that contains the skill, or pass the absolute path to the script.
-
-### 4. Discover Tools
+### 5. Discover Tools In The Current Session
 
 If the current Codex session exposes MCP tools, use tool discovery for:
 
@@ -76,7 +88,7 @@ Expected tools include `get_design_context`, `get_metadata`, `get_screenshot`, a
 
 If tool discovery returns nothing but the probe succeeds, explain that the current session did not load the newly registered MCP server. Continue with direct MCP HTTP calls only for validation, or ask the user to restart Codex so native tools load.
 
-### 5. Read The Selected Frame
+### 6. Read The Selected Frame
 
 Ask the user to select one mobile page frame in Figma Desktop: the outer frame for a phone screen or mobile long page, not a button, text layer, group, entire page, or multiple nodes.
 
@@ -88,6 +100,8 @@ Call tools in this order:
 4. `get_variable_defs` to check whether Figma variables expose tokens.
 
 If using direct MCP HTTP, call `tools/call` with the current selection by omitting `nodeId`, or pass the node id returned by metadata.
+
+`get_screenshot` provides the Figma baseline screenshot. It does not compare images by itself. For screenshot comparison, capture the generated app separately with browser tooling, then compare against the Figma PNG with a visual diff tool or manual review.
 
 ## Direct MCP Call Pattern
 
@@ -131,18 +145,6 @@ Next step:
 ```
 
 Implementation warnings should mention when Figma returns React + Tailwind reference code. Adapt it to the target project's stack; do not install Tailwind unless the user explicitly asks.
-
-## MiniApp D2C Generation
-
-After connectivity and selected-frame extraction pass:
-
-1. Extract visual tokens from Figma context, screenshot, and variables. If `get_variable_defs` returns `{}`, treat observed styles as extracted tokens.
-2. Identify whether the visual family already exists in `@everly/miniapp-uidesign`. Reuse an exact match; ask the user before creating a new family when it is close but not identical; create a new family only for clearly distinct styles.
-3. Map visible health concepts to `@everly/miniapp-network` Health KV keys before coding UI. Unsupported data must be replaced with the closest valid key, derived conservatively from valid keys, or removed with layout adjustment.
-4. Keep reusable visual decisions in `@everly/miniapp-uidesign`; keep page orchestration and network calls in `src/miniapp/App.tsx`.
-5. Verify with install, type/lint, static build, and local browser or HTTP checks.
-
-Read [references/nutrition-miniapp-generation.md](references/nutrition-miniapp-generation.md) for the concrete nutrition workflow, package structure, mapping rules, and validation checklist.
 
 ## Common Failures
 
