@@ -169,6 +169,99 @@ class CardRendererTests(unittest.TestCase):
 
         self.assertRaises(LayoutOverflowError, render_card, project, "p02")
 
+    def test_layout_fields_require_non_boolean_integers(self):
+        for field in (
+            "margin_x",
+            "margin_top",
+            "margin_bottom",
+            "illustration_height",
+        ):
+            with self.subTest(field=field):
+                self.mutate(
+                    "visual-bible.yaml",
+                    lambda data, field=field: data["layout"].update({field: True}),
+                )
+
+                with self.assertRaises(LayoutOverflowError) as layout_exception:
+                    render_card(self.project, "p01")
+
+                self.assertIn(f"layout.{field}", str(layout_exception.exception))
+                self.mutate(
+                    "visual-bible.yaml",
+                    lambda data, field=field: data["layout"].update(
+                        {
+                            field: {
+                                "margin_x": 80,
+                                "margin_top": 72,
+                                "margin_bottom": 72,
+                                "illustration_height": 520,
+                            }[field]
+                        }
+                    ),
+                )
+
+    def test_margin_x_requires_nonnegative_positive_content_width(self):
+        for value in (-1, 540):
+            with self.subTest(value=value):
+                self.mutate(
+                    "visual-bible.yaml",
+                    lambda data, value=value: data["layout"].update(margin_x=value),
+                )
+
+                with self.assertRaises(LayoutOverflowError) as layout_exception:
+                    render_card(self.project, "p01")
+
+                self.assertIn("layout.margin_x", str(layout_exception.exception))
+                self.mutate(
+                    "visual-bible.yaml",
+                    lambda data: data["layout"].update(margin_x=80),
+                )
+
+    def test_vertical_margins_keep_text_and_footer_inside_canvas(self):
+        for field, value, default in (
+            ("margin_top", 2000, 72),
+            ("margin_bottom", -1000, 72),
+        ):
+            with self.subTest(field=field, value=value):
+                self.mutate(
+                    "visual-bible.yaml",
+                    lambda data, field=field, value=value: data["layout"].update(
+                        {field: value}
+                    ),
+                )
+
+                with self.assertRaises(LayoutOverflowError) as layout_exception:
+                    render_card(self.project, "p01")
+
+                self.assertIn(f"layout.{field}", str(layout_exception.exception))
+                self.mutate(
+                    "visual-bible.yaml",
+                    lambda data, field=field, default=default: data["layout"].update(
+                        {field: default}
+                    ),
+                )
+
+    def test_illustration_region_stays_inside_canvas_without_footer_overlap(self):
+        for value in (1000, 700):
+            with self.subTest(value=value):
+                self.mutate(
+                    "visual-bible.yaml",
+                    lambda data, value=value: data["layout"].update(
+                        illustration_height=value
+                    ),
+                )
+
+                with self.assertRaises(LayoutOverflowError) as layout_exception:
+                    render_card(self.project, "p01")
+
+                self.assertIn(
+                    "layout.illustration_height", str(layout_exception.exception)
+                )
+                self.mutate(
+                    "visual-bible.yaml",
+                    lambda data: data["layout"].update(illustration_height=520),
+                )
+
     def test_footer_signature_outside_content_width_raises_layout_overflow(self):
         self.mutate(
             "visual-bible.yaml",
@@ -184,6 +277,17 @@ class CardRendererTests(unittest.TestCase):
         )
 
         self.assertRaises(LayoutOverflowError, render_card, self.project, "p01")
+
+    def test_footer_signature_requires_string(self):
+        self.mutate(
+            "visual-bible.yaml",
+            lambda data: data.update(footer={"signature": 42}),
+        )
+
+        with self.assertRaises(ValueError) as signature_exception:
+            render_card(self.project, "p01")
+
+        self.assertIn("footer.signature", str(signature_exception.exception))
 
 
 if __name__ == "__main__":

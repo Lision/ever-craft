@@ -24,6 +24,13 @@ FONT_CANDIDATES = {
     "bold": [Path.home() / "Library/Fonts/MapleMono-NF-CN-Bold.ttf"],
 }
 FOOTER_GAP = 40
+KICKER_HEIGHT = 40
+MIN_VERTICAL_GAP = 24
+TITLE_TOP = 136
+TITLE_HEIGHT = 260
+BODY_TOP = 420
+BODY_HEIGHT = 150
+ILLUSTRATION_TOP = 660
 
 
 class LayoutOverflowError(RuntimeError):
@@ -164,6 +171,67 @@ def _merged_theme(visual_bible: dict[str, Any]) -> dict[str, Any]:
     return theme
 
 
+def _preflight_effective_layout(
+    theme: dict[str, Any], footer_font: ImageFont.FreeTypeFont, page_number: str
+) -> dict[str, int]:
+    layout = theme["layout"]
+    signature = theme["footer"]["signature"]
+    if not isinstance(signature, str):
+        raise ValueError("footer.signature must be a string")
+    for field in ("margin_x", "margin_top", "margin_bottom", "illustration_height"):
+        value = layout[field]
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise LayoutOverflowError(f"layout.{field} must be an integer")
+    margin_x = layout["margin_x"]
+    content_width = theme["canvas"]["width"] - 2 * margin_x
+    if margin_x < 0 or content_width <= 0:
+        raise LayoutOverflowError(
+            "layout.margin_x must be nonnegative and leave positive content width"
+        )
+    margin_top = layout["margin_top"]
+    if (
+        margin_top < 0
+        or margin_top + KICKER_HEIGHT + MIN_VERTICAL_GAP > TITLE_TOP
+    ):
+        raise LayoutOverflowError(
+            "layout.margin_top places the kicker outside or into the title region"
+        )
+    margin_bottom = layout["margin_bottom"]
+    footer_height = sum(footer_font.getmetrics())
+    footer_top = theme["canvas"]["height"] - margin_bottom - footer_height
+    footer_bottom = footer_top + footer_height
+    if (
+        margin_bottom < 0
+        or footer_top < 0
+        or footer_bottom > theme["canvas"]["height"]
+    ):
+        raise LayoutOverflowError(
+            "layout.margin_bottom places the footer outside the canvas"
+        )
+    illustration_height = layout["illustration_height"]
+    illustration_bottom = ILLUSTRATION_TOP + illustration_height
+    if (
+        illustration_height <= 0
+        or illustration_bottom > theme["canvas"]["height"]
+        or illustration_bottom + MIN_VERTICAL_GAP > footer_top
+    ):
+        raise LayoutOverflowError(
+            "layout.illustration_height places the illustration outside the canvas "
+            "or into the footer region"
+        )
+    signature_width = footer_font.getlength(signature)
+    if signature_width > content_width:
+        raise LayoutOverflowError("footer signature exceeds the content width")
+    page_number_width = footer_font.getlength(page_number)
+    if (
+        theme["footer"]["show_page_number"]
+        and signature
+        and page_number_width + FOOTER_GAP + signature_width > content_width
+    ):
+        raise LayoutOverflowError("footer page number and signature overlap")
+    return {"content_width": content_width, "footer_top": footer_top}
+
+
 def _contain_illustration(
     canvas: Image.Image,
     illustration_path: Path,
@@ -213,6 +281,7 @@ def render_card(project_dir: Path, page_id: str) -> Path:
 
     footer = f"{page_index + 1:02d} / {len(pages):02d}"
     signature = theme["footer"]["signature"]
+    geometry = _preflight_effective_layout(theme, fonts["footer"], footer)
     assert_glyph_coverage(bold_path, page["title"])
     assert_glyph_coverage(
         regular_path,
@@ -224,7 +293,7 @@ def render_card(project_dir: Path, page_id: str) -> Path:
     layout = theme["layout"]
     width, height = canvas_config["width"], canvas_config["height"]
     margin_x = layout["margin_x"]
-    content_width = width - 2 * margin_x
+    content_width = geometry["content_width"]
     canvas = Image.new("RGB", (width, height), palette["background"])
     draw = ImageDraw.Draw(canvas)
 
@@ -235,55 +304,43 @@ def render_card(project_dir: Path, page_id: str) -> Path:
         fonts["kicker"],
         palette["accent"],
         content_width,
-        40,
+        KICKER_HEIGHT,
         0,
     )
     draw_text_block(
         draw,
         page["title"],
-        (margin_x, 136),
+        (margin_x, TITLE_TOP),
         fonts["title"],
         palette["ink"],
         content_width,
-        260,
+        TITLE_HEIGHT,
         theme["line_spacing"]["title"],
     )
     draw_text_block(
         draw,
         page["body"],
-        (margin_x, 420),
+        (margin_x, BODY_TOP),
         fonts["body"],
         palette["muted"],
         content_width,
-        150,
+        BODY_HEIGHT,
         theme["line_spacing"]["body"],
     )
     draw.line((margin_x, 610, width - margin_x, 610), fill=palette["divider"], width=2)
 
-    illustration_top = 660
     _contain_illustration(
         canvas,
         project_dir / page["illustration"],
         (
             margin_x,
-            illustration_top,
+            ILLUSTRATION_TOP,
             width - margin_x,
-            illustration_top + layout["illustration_height"],
+            ILLUSTRATION_TOP + layout["illustration_height"],
         ),
     )
 
-    footer_ascent, footer_descent = fonts["footer"].getmetrics()
-    footer_y = height - layout["margin_bottom"] - footer_ascent - footer_descent
-    signature_width = draw.textlength(signature, font=fonts["footer"])
-    if signature_width > content_width:
-        raise LayoutOverflowError("footer signature exceeds the content width")
-    page_number_width = draw.textlength(footer, font=fonts["footer"])
-    if (
-        theme["footer"]["show_page_number"]
-        and signature
-        and page_number_width + FOOTER_GAP + signature_width > content_width
-    ):
-        raise LayoutOverflowError("footer page number and signature overlap")
+    footer_y = geometry["footer_top"]
     if theme["footer"]["show_page_number"]:
         draw.text(
             (margin_x, footer_y),
