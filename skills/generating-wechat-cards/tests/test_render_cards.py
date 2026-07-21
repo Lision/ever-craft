@@ -21,6 +21,7 @@ from render_cards import (
 
 REGULAR_FONT = Path("/Users/lision/Library/Fonts/MapleMono-NF-CN-Regular.ttf")
 BOLD_FONT = Path("/Users/lision/Library/Fonts/MapleMono-NF-CN-Bold.ttf")
+IMPOSTOR_FONT = Path("/System/Library/Fonts/Supplemental/Arial.ttf")
 ILLUSTRATION_COLORS = {"p01": "#012FA7", "p02": "#854953"}
 
 
@@ -73,10 +74,33 @@ class CardRendererTests(unittest.TestCase):
             self.assertEqual(image.getpixel((20, 20)), (250, 250, 248))
             self.assertEqual(image.getpixel((540, 920)), (1, 47, 167))
 
+    def test_visual_bible_cannot_override_fixed_typography_scale(self):
+        card = render_card(self.project, "p01")
+        expected_png = card.read_bytes()
+        self.mutate(
+            "visual-bible.yaml",
+            lambda data: data.update(typography_scale={"cover_title": 12}),
+        )
+
+        render_card(self.project, "p01")
+
+        self.assertEqual(card.read_bytes(), expected_png)
+
     def test_render_all_uses_manifest_page_order(self):
         project = self.project
         self.assertEqual(
             [path.name for path in render_all(project)], ["p01.png", "p02.png"]
+        )
+
+    def test_render_all_validates_before_reading_pages(self):
+        self.mutate("manifest.yaml", lambda data: data.update(pages=[]))
+
+        with self.assertRaises(ValueError) as invalid_project_exception:
+            render_all(self.project)
+
+        self.assertIn(
+            "pages: expected a non-empty list",
+            str(invalid_project_exception.exception),
         )
 
     def test_missing_explicit_font_reports_required_family(self):
@@ -92,6 +116,36 @@ class CardRendererTests(unittest.TestCase):
             find_font_paths(visual_bible)
 
         self.assertIn("Maple Mono NF CN", str(missing_font_exception.exception))
+
+    def test_rejects_existing_non_maple_explicit_font(self):
+        if not IMPOSTOR_FONT.is_file():
+            self.skipTest(f"non-Maple system test font is unavailable: {IMPOSTOR_FONT}")
+        visual_bible = {
+            "typography": {
+                "family": "Maple Mono NF CN",
+                "regular_path": str(IMPOSTOR_FONT),
+                "bold_path": str(BOLD_FONT),
+            }
+        }
+
+        with self.assertRaises(ValueError) as impostor_font_exception:
+            find_font_paths(visual_bible)
+
+        self.assertIn("Maple Mono NF CN", str(impostor_font_exception.exception))
+
+    def test_rejects_swapped_maple_font_weights(self):
+        visual_bible = {
+            "typography": {
+                "family": "Maple Mono NF CN",
+                "regular_path": str(BOLD_FONT),
+                "bold_path": str(REGULAR_FONT),
+            }
+        }
+
+        with self.assertRaises(ValueError) as wrong_weight_exception:
+            find_font_paths(visual_bible)
+
+        self.assertIn("regular", str(wrong_weight_exception.exception))
 
     def test_missing_glyph_fails_preflight(self):
         with self.assertRaises(ValueError) as missing_glyph_exception:
@@ -114,6 +168,22 @@ class CardRendererTests(unittest.TestCase):
         )
 
         self.assertRaises(LayoutOverflowError, render_card, project, "p02")
+
+    def test_footer_signature_outside_content_width_raises_layout_overflow(self):
+        self.mutate(
+            "visual-bible.yaml",
+            lambda data: data.update(footer={"signature": "S" * 100}),
+        )
+
+        self.assertRaises(LayoutOverflowError, render_card, self.project, "p01")
+
+    def test_footer_signature_collision_raises_layout_overflow(self):
+        self.mutate(
+            "visual-bible.yaml",
+            lambda data: data.update(footer={"signature": "S" * 65}),
+        )
+
+        self.assertRaises(LayoutOverflowError, render_card, self.project, "p01")
 
 
 if __name__ == "__main__":

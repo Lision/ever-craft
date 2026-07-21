@@ -23,10 +23,41 @@ FONT_CANDIDATES = {
     "regular": [Path.home() / "Library/Fonts/MapleMono-NF-CN-Regular.ttf"],
     "bold": [Path.home() / "Library/Fonts/MapleMono-NF-CN-Bold.ttf"],
 }
+FOOTER_GAP = 40
 
 
 class LayoutOverflowError(RuntimeError):
     """Raised when fixed theme typography cannot contain the supplied content."""
+
+
+def _assert_font_metadata(font_path: Path, weight: str) -> None:
+    with TTFont(font_path, lazy=True) as font:
+        name_table = font["name"]
+        family_names = {
+            record.toUnicode()
+            for record in name_table.names
+            if record.nameID in (1, 16)
+        }
+        style_names = {
+            record.toUnicode()
+            for record in name_table.names
+            if record.nameID in (2, 17)
+        }
+        os2 = font["OS/2"]
+        weight_class = os2.usWeightClass
+        is_italic = bool(os2.fsSelection & 0b1)
+    if REQUIRED_FONT_FAMILY not in family_names:
+        raise ValueError(f"{font_path}: expected {REQUIRED_FONT_FAMILY} font metadata")
+    expected_style = weight.capitalize()
+    expected_weight_class = {"regular": 400, "bold": 700}[weight]
+    if (
+        expected_style not in style_names
+        or weight_class != expected_weight_class
+        or is_italic
+    ):
+        raise ValueError(
+            f"{font_path}: expected {REQUIRED_FONT_FAMILY} {weight} font metadata"
+        )
 
 
 def find_font_paths(visual_bible: dict[str, Any]) -> tuple[Path, Path]:
@@ -44,6 +75,7 @@ def find_font_paths(visual_bible: dict[str, Any]) -> tuple[Path, Path]:
                 raise FileNotFoundError(
                     f"{REQUIRED_FONT_FAMILY} {weight} font not found: {path}"
                 )
+            _assert_font_metadata(path, weight)
             found[weight] = path
             continue
 
@@ -56,6 +88,7 @@ def find_font_paths(visual_bible: dict[str, Any]) -> tuple[Path, Path]:
             raise FileNotFoundError(
                 f"{REQUIRED_FONT_FAMILY} {weight} font not found; checked: {candidates}"
             )
+        _assert_font_metadata(candidate, weight)
         found[weight] = candidate
 
     return found["regular"], found["bold"]
@@ -117,15 +150,17 @@ def draw_text_block(draw, text, xy, font, fill, max_width, max_height, spacing):
 
 def _merged_theme(visual_bible: dict[str, Any]) -> dict[str, Any]:
     theme = load_yaml(DEFAULT_THEME_PATH)
+    for section in ("layout", "illustration"):
+        overrides = visual_bible.get(section)
+        if not isinstance(overrides, dict):
+            continue
+        for key in theme[section]:
+            if key in overrides:
+                theme[section][key] = copy.deepcopy(overrides[key])
 
-    def merge(target: dict[str, Any], overrides: dict[str, Any]) -> None:
-        for key, value in overrides.items():
-            if isinstance(value, dict) and isinstance(target.get(key), dict):
-                merge(target[key], value)
-            else:
-                target[key] = copy.deepcopy(value)
-
-    merge(theme, visual_bible)
+    footer = visual_bible.get("footer")
+    if isinstance(footer, dict) and "signature" in footer:
+        theme["footer"]["signature"] = copy.deepcopy(footer["signature"])
     return theme
 
 
@@ -237,7 +272,18 @@ def render_card(project_dir: Path, page_id: str) -> Path:
         ),
     )
 
-    footer_y = height - layout["margin_bottom"] - fonts["footer"].getmetrics()[0]
+    footer_ascent, footer_descent = fonts["footer"].getmetrics()
+    footer_y = height - layout["margin_bottom"] - footer_ascent - footer_descent
+    signature_width = draw.textlength(signature, font=fonts["footer"])
+    if signature_width > content_width:
+        raise LayoutOverflowError("footer signature exceeds the content width")
+    page_number_width = draw.textlength(footer, font=fonts["footer"])
+    if (
+        theme["footer"]["show_page_number"]
+        and signature
+        and page_number_width + FOOTER_GAP + signature_width > content_width
+    ):
+        raise LayoutOverflowError("footer page number and signature overlap")
     if theme["footer"]["show_page_number"]:
         draw.text(
             (margin_x, footer_y),
@@ -269,6 +315,9 @@ def render_card(project_dir: Path, page_id: str) -> Path:
 def render_all(project_dir: Path) -> list[Path]:
     """Render and return cards in manifest page order."""
     project_dir = Path(project_dir)
+    errors = validate_project(project_dir)
+    if errors:
+        raise ValueError("project validation failed:\n" + "\n".join(errors))
     manifest = load_yaml(project_dir / "manifest.yaml")
     return [render_card(project_dir, page["id"]) for page in manifest["pages"]]
 
