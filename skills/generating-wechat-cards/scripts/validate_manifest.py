@@ -14,6 +14,16 @@ import yaml
 PAGE_TYPES = {"cover", "standard", "comparison", "list", "summary"}
 MAX_GENERATION_ROUNDS = 3
 REQUIRED_FONT_FAMILY = "Maple Mono NF CN"
+REQUIRED_PALETTE = {
+    "background": "#FAFAF8",
+    "surface": "#F0F0EE",
+    "ink": "#0A0A08",
+    "solid": "#000000",
+    "accent": "#012FA7",
+    "annotation": "#854953",
+    "muted": "#747472",
+    "divider": "#D1D1CF",
+}
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
@@ -33,6 +43,21 @@ def safe_relative_path(value: object, field: str, errors: list[str]) -> Path | N
         errors.append(f"{field}: path must stay inside the post directory")
         return None
     return path
+
+
+def _resolved_project_path(
+    project_dir: Path, path: Path | None, field: str, errors: list[str]
+) -> Path | None:
+    if path is None:
+        return None
+    root = project_dir.resolve()
+    resolved = (root / path).resolve(strict=False)
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        errors.append(f"{field}: path must stay inside the post directory")
+        return None
+    return resolved
 
 
 def _mapping(value: object, field: str, errors: list[str]) -> dict[str, Any]:
@@ -75,19 +100,34 @@ def validate_project(project_dir: Path) -> list[str]:
     post = _mapping(manifest.get("post"), "post", errors)
     for key in ("slug", "thesis", "status"):
         _required_string(post, key, f"post.{key}", errors)
-    _counter(post.get("generation_round"), "post.generation_round", 0, MAX_GENERATION_ROUNDS, errors)
-    _counter(
-        post.get("max_generation_rounds"),
-        "post.max_generation_rounds",
-        1,
-        MAX_GENERATION_ROUNDS,
-        errors,
-    )
+    generation_round = post.get("generation_round")
+    max_generation_rounds = post.get("max_generation_rounds")
+    _counter(generation_round, "post.generation_round", 0, MAX_GENERATION_ROUNDS, errors)
+    if max_generation_rounds != MAX_GENERATION_ROUNDS:
+        errors.append(
+            f"post.max_generation_rounds must be exactly {MAX_GENERATION_ROUNDS}"
+        )
+    if (
+        isinstance(generation_round, int)
+        and not isinstance(generation_round, bool)
+        and isinstance(max_generation_rounds, int)
+        and not isinstance(max_generation_rounds, bool)
+        and generation_round > max_generation_rounds
+    ):
+        errors.append(
+            "post.generation_round must not exceed post.max_generation_rounds"
+        )
 
-    source_path = safe_relative_path(manifest.get("source"), "source", errors)
-    visual_bible_path = safe_relative_path(manifest.get("visual_bible"), "visual_bible", errors)
-    if source_path is not None and not (project_dir / source_path).is_file():
-        errors.append(f"source: {source_path.name} does not exist")
+    source_relative = safe_relative_path(manifest.get("source"), "source", errors)
+    source_path = _resolved_project_path(project_dir, source_relative, "source", errors)
+    visual_bible_relative = safe_relative_path(
+        manifest.get("visual_bible"), "visual_bible", errors
+    )
+    visual_bible_path = _resolved_project_path(
+        project_dir, visual_bible_relative, "visual_bible", errors
+    )
+    if source_path is not None and not source_path.is_file():
+        errors.append(f"source: {source_relative.name} does not exist")
 
     visual_bible = None
     if visual_bible_path is not None:
@@ -101,6 +141,10 @@ def validate_project(project_dir: Path) -> list[str]:
         typography = _mapping(visual_bible.get("typography"), "typography", errors)
         if typography.get("family") != REQUIRED_FONT_FAMILY:
             errors.append(f"typography.family must be {REQUIRED_FONT_FAMILY}")
+        palette = _mapping(visual_bible.get("palette"), "palette", errors)
+        for token, expected in REQUIRED_PALETTE.items():
+            if palette.get(token) != expected:
+                errors.append(f"palette.{token} must be {expected}")
 
     pages = manifest.get("pages")
     if not isinstance(pages, list) or not pages:
@@ -120,7 +164,7 @@ def validate_project(project_dir: Path) -> list[str]:
     for index, value in enumerate(pages):
         field = f"pages[{index}]"
         page = _mapping(value, field, errors)
-        if not page:
+        if not isinstance(value, dict):
             continue
 
         for key in required_page_strings:
@@ -136,25 +180,43 @@ def validate_project(project_dir: Path) -> list[str]:
         if page_type not in PAGE_TYPES:
             errors.append(f"{field}.type must be one of: {', '.join(sorted(PAGE_TYPES))}")
 
+        image_generation_count = page.get("image_generation_count")
+        max_image_generations = page.get("max_image_generations")
         _counter(
-            page.get("image_generation_count"),
+            image_generation_count,
             f"{field}.image_generation_count",
             0,
             MAX_GENERATION_ROUNDS,
             errors,
         )
-        _counter(
-            page.get("max_image_generations"),
-            f"{field}.max_image_generations",
-            1,
-            MAX_GENERATION_ROUNDS,
-            errors,
-        )
+        if max_image_generations != MAX_GENERATION_ROUNDS:
+            errors.append(
+                f"{field}.max_image_generations must be exactly {MAX_GENERATION_ROUNDS}"
+            )
+        if (
+            isinstance(image_generation_count, int)
+            and not isinstance(image_generation_count, bool)
+            and isinstance(max_image_generations, int)
+            and not isinstance(max_image_generations, bool)
+            and image_generation_count > max_image_generations
+        ):
+            errors.append(
+                f"{field}.image_generation_count must not exceed "
+                f"{field}.max_image_generations"
+            )
 
-        illustration = safe_relative_path(page.get("illustration"), f"{field}.illustration", errors)
-        safe_relative_path(page.get("card"), f"{field}.card", errors)
-        if illustration is not None and not (project_dir / illustration).is_file():
-            errors.append(f"{field}.illustration: {illustration.name} does not exist")
+        illustration_relative = safe_relative_path(
+            page.get("illustration"), f"{field}.illustration", errors
+        )
+        illustration = _resolved_project_path(
+            project_dir, illustration_relative, f"{field}.illustration", errors
+        )
+        card_relative = safe_relative_path(page.get("card"), f"{field}.card", errors)
+        _resolved_project_path(project_dir, card_relative, f"{field}.card", errors)
+        if illustration is not None and not illustration.is_file():
+            errors.append(
+                f"{field}.illustration: {illustration_relative.name} does not exist"
+            )
 
     return errors
 
