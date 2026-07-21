@@ -223,6 +223,8 @@ def _preflight_effective_layout(
     if signature_width > content_width:
         raise LayoutOverflowError("footer signature exceeds the content width")
     page_number_width = footer_font.getlength(page_number)
+    if theme["footer"]["show_page_number"] and page_number_width > content_width:
+        raise LayoutOverflowError("footer page number exceeds the content width")
     if (
         theme["footer"]["show_page_number"]
         and signature

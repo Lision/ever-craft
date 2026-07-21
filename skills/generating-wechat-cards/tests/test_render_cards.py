@@ -278,6 +278,21 @@ class CardRendererTests(unittest.TestCase):
 
         self.assertRaises(LayoutOverflowError, render_card, self.project, "p01")
 
+    def test_page_number_must_fit_without_signature(self):
+        self.mutate(
+            "manifest.yaml",
+            lambda data: data["pages"][0].update(title="I", kicker="I", body="I"),
+        )
+        self.mutate(
+            "visual-bible.yaml",
+            lambda data: data["layout"].update(margin_x=500),
+        )
+
+        with self.assertRaises(LayoutOverflowError) as page_number_exception:
+            render_card(self.project, "p01")
+
+        self.assertIn("page number", str(page_number_exception.exception))
+
     def test_footer_signature_requires_string(self):
         self.mutate(
             "visual-bible.yaml",
