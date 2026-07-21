@@ -78,6 +78,10 @@ def _counter(value: object, field: str, minimum: int, maximum: int, errors: list
         errors.append(f"{field} must be between {minimum} and {maximum}")
 
 
+def _is_exact_integer(value: object, expected: int) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value == expected
+
+
 def _load_project_yaml(path: Path, field: str, errors: list[str]) -> dict[str, Any] | None:
     if not path.is_file():
         errors.append(f"{field}: {path.name} does not exist")
@@ -103,7 +107,7 @@ def validate_project(project_dir: Path) -> list[str]:
     generation_round = post.get("generation_round")
     max_generation_rounds = post.get("max_generation_rounds")
     _counter(generation_round, "post.generation_round", 0, MAX_GENERATION_ROUNDS, errors)
-    if max_generation_rounds != MAX_GENERATION_ROUNDS:
+    if not _is_exact_integer(max_generation_rounds, MAX_GENERATION_ROUNDS):
         errors.append(
             f"post.max_generation_rounds must be exactly {MAX_GENERATION_ROUNDS}"
         )
@@ -136,7 +140,9 @@ def validate_project(project_dir: Path) -> list[str]:
         )
     if visual_bible is not None:
         canvas = _mapping(visual_bible.get("canvas"), "canvas", errors)
-        if canvas.get("width") != 1080 or canvas.get("height") != 1440:
+        if not _is_exact_integer(canvas.get("width"), 1080) or not _is_exact_integer(
+            canvas.get("height"), 1440
+        ):
             errors.append("canvas must be exactly 1080x1440")
         typography = _mapping(visual_bible.get("typography"), "typography", errors)
         if typography.get("family") != REQUIRED_FONT_FAMILY:
@@ -177,7 +183,9 @@ def validate_project(project_dir: Path) -> list[str]:
             page_ids.add(page_id)
 
         page_type = page.get("type")
-        if page_type not in PAGE_TYPES:
+        if not isinstance(page_type, str):
+            errors.append(f"{field}.type: expected a string")
+        elif page_type not in PAGE_TYPES:
             errors.append(f"{field}.type must be one of: {', '.join(sorted(PAGE_TYPES))}")
 
         image_generation_count = page.get("image_generation_count")
@@ -189,7 +197,7 @@ def validate_project(project_dir: Path) -> list[str]:
             MAX_GENERATION_ROUNDS,
             errors,
         )
-        if max_image_generations != MAX_GENERATION_ROUNDS:
+        if not _is_exact_integer(max_image_generations, MAX_GENERATION_ROUNDS):
             errors.append(
                 f"{field}.max_image_generations must be exactly {MAX_GENERATION_ROUNDS}"
             )

@@ -57,6 +57,27 @@ class ManifestValidationTests(unittest.TestCase):
         self.mutate("visual-bible.yaml", lambda data: data["canvas"].update(width=1200))
         self.assert_error_contains("canvas must be exactly 1080x1440")
 
+    def test_canvas_dimensions_require_actual_integers(self):
+        for dimension, expected in (("width", 1080), ("height", 1440)):
+            for invalid in (float(expected), True, False):
+                with self.subTest(dimension=dimension, invalid=invalid):
+                    self.mutate(
+                        "visual-bible.yaml",
+                        lambda data, dimension=dimension, invalid=invalid: data[
+                            "canvas"
+                        ].update({dimension: invalid}),
+                    )
+                    errors = validate_project(self.project)
+                    self.mutate(
+                        "visual-bible.yaml",
+                        lambda data, dimension=dimension, expected=expected: data[
+                            "canvas"
+                        ].update({dimension: expected}),
+                    )
+                    self.assertTrue(
+                        any("canvas must be exactly 1080x1440" in error for error in errors)
+                    )
+
     def test_requires_maple_mono_nf_cn(self):
         self.mutate("visual-bible.yaml", lambda data: data["typography"].update(family="Arial"))
         self.assert_error_contains("typography.family must be Maple Mono NF CN")
@@ -119,6 +140,26 @@ class ManifestValidationTests(unittest.TestCase):
         self.mutate("manifest.yaml", lambda data: data["pages"][0].update(type="poster"))
         self.assert_error_contains("pages[0].type")
 
+    def test_rejects_non_string_page_type_without_crashing(self):
+        self.mutate("manifest.yaml", lambda data: data["pages"][0].update(type=[]))
+        errors = validate_project(self.project)
+        self.assertTrue(
+            any("pages[0].type: expected a string" in error for error in errors)
+        )
+
+    def test_cli_reports_non_string_page_type_without_traceback(self):
+        self.mutate("manifest.yaml", lambda data: data["pages"][0].update(type=[]))
+        result = subprocess.run(
+            [sys.executable, str(SKILL_DIR / "scripts" / "validate_manifest.py"), str(self.project)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR: pages[0].type: expected a string", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(result.stdout, "")
+
     def test_rejects_generation_round_above_three(self):
         self.mutate("manifest.yaml", lambda data: data["post"].update(generation_round=4))
         self.assert_error_contains("post.generation_round must be between 0 and 3")
@@ -126,6 +167,27 @@ class ManifestValidationTests(unittest.TestCase):
     def test_requires_post_max_generation_rounds_to_equal_three(self):
         self.mutate("manifest.yaml", lambda data: data["post"].update(max_generation_rounds=2))
         self.assert_error_contains("post.max_generation_rounds must be exactly 3")
+
+    def test_post_max_generation_rounds_requires_an_actual_integer(self):
+        for invalid in (3.0, True, False):
+            with self.subTest(invalid=invalid):
+                self.mutate(
+                    "manifest.yaml",
+                    lambda data, invalid=invalid: data["post"].update(
+                        max_generation_rounds=invalid
+                    ),
+                )
+                errors = validate_project(self.project)
+                self.mutate(
+                    "manifest.yaml",
+                    lambda data: data["post"].update(max_generation_rounds=3),
+                )
+                self.assertTrue(
+                    any(
+                        "post.max_generation_rounds must be exactly 3" in error
+                        for error in errors
+                    )
+                )
 
     def test_rejects_post_round_above_configured_maximum(self):
         self.mutate(
@@ -145,6 +207,27 @@ class ManifestValidationTests(unittest.TestCase):
             "manifest.yaml", lambda data: data["pages"][0].update(max_image_generations=2)
         )
         self.assert_error_contains("pages[0].max_image_generations must be exactly 3")
+
+    def test_page_max_image_generations_requires_an_actual_integer(self):
+        for invalid in (3.0, True, False):
+            with self.subTest(invalid=invalid):
+                self.mutate(
+                    "manifest.yaml",
+                    lambda data, invalid=invalid: data["pages"][0].update(
+                        max_image_generations=invalid
+                    ),
+                )
+                errors = validate_project(self.project)
+                self.mutate(
+                    "manifest.yaml",
+                    lambda data: data["pages"][0].update(max_image_generations=3),
+                )
+                self.assertTrue(
+                    any(
+                        "pages[0].max_image_generations must be exactly 3" in error
+                        for error in errors
+                    )
+                )
 
     def test_rejects_page_count_above_configured_maximum(self):
         self.mutate(
