@@ -1,0 +1,30 @@
+canvas: {width: 1080, height: 1440}
+typography:
+  family: Maple Mono NF CN
+  regular_path: null
+  bold_path: null
+palette:
+  background: "#FAFAF8"
+  surface: "#F0F0EE"
+  ink: "#0A0A08"
+  solid: "#000000"
+  accent: "#012FA7"
+  annotation: "#854953"
+  muted: "#747472"
+  divider: "#D1D1CF"
+layout:
+  margin_x: 80
+  margin_top: 72
+  margin_bottom: 72
+  illustration_height: 520
+illustration:
+  character_enabled: true
+  prohibited: [photorealism, 3d rendering, copied reference mascot]
+typography_scale:
+  cover_title: 90
+  standard_title: 72
+  kicker: 24
+  body: 34
+  footer: 22
+line_spacing: {title: 18, body: 16}
+footer: {show_page_number: true, signature: ""}
