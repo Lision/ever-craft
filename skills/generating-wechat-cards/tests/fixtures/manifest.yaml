@@ -1,0 +1,33 @@
+post:
+  slug: durable-task-lists
+  thesis: 任务清单必须保存判断所需的上下文
+  status: approved_for_render
+  generation_round: 1
+  max_generation_rounds: 3
+source: source.md
+visual_bible: visual-bible.yaml
+pages:
+  - id: p01
+    type: cover
+    title: 任务清单为什么总会失效
+    kicker: CONTEXT / DECISIONS
+    body: 清单记录动作，却经常丢失决定动作的上下文。
+    visual_metaphor: 角色拖着一张不断掉落背景信息的清单
+    illustration_prompt: Minimal original line drawing of a task list losing context cards.
+    image_generation_count: 1
+    max_image_generations: 3
+    illustration: illustrations/p01-v01.png
+    card: cards/p01.png
+    status: approved_for_render
+  - id: p02
+    type: standard
+    title: 先分清三件事
+    kicker: GOAL / CONSTRAINT / NEXT
+    body: 目标决定方向，约束限定空间，下一步只负责推进。
+    visual_metaphor: 三个不同形状的容器依次连接
+    illustration_prompt: Minimal original line drawing of three connected containers.
+    image_generation_count: 1
+    max_image_generations: 3
+    illustration: illustrations/p02-v01.png
+    card: cards/p02.png
+    status: approved_for_render
