@@ -14,6 +14,21 @@ import yaml
 PAGE_TYPES = {"cover", "standard", "comparison", "list", "summary"}
 MAX_GENERATION_ROUNDS = 3
 REQUIRED_FONT_FAMILY = "Maple Mono NF CN"
+VALIDATION_PHASES = ("complete", "pre-generation")
+WORKFLOW_STATES = {
+    "draft",
+    "script_pending",
+    "script_approved",
+    "anchor_pending",
+    "anchor_approved",
+    "generating",
+    "reviewing",
+    "revising",
+    "passed",
+    "limit_reached",
+    # Preserve compatibility with projects created before workflow states were documented.
+    "approved_for_render",
+}
 REQUIRED_PALETTE = {
     "background": "#FAFAF8",
     "surface": "#F0F0EE",
@@ -73,6 +88,11 @@ def _required_string(mapping: dict[str, Any], key: str, field: str, errors: list
         errors.append(f"{field}: expected a non-empty string")
 
 
+def _workflow_state(value: object, field: str, errors: list[str]) -> None:
+    if not isinstance(value, str) or value not in WORKFLOW_STATES:
+        errors.append(f"{field} must be one of: {', '.join(sorted(WORKFLOW_STATES))}")
+
+
 def _counter(value: object, field: str, minimum: int, maximum: int, errors: list[str]) -> None:
     if not isinstance(value, int) or isinstance(value, bool) or not minimum <= value <= maximum:
         errors.append(f"{field} must be between {minimum} and {maximum}")
@@ -93,8 +113,10 @@ def _load_project_yaml(path: Path, field: str, errors: list[str]) -> dict[str, A
         return None
 
 
-def validate_project(project_dir: Path) -> list[str]:
+def validate_project(project_dir: Path, phase: str = "complete") -> list[str]:
     """Return all deterministic schema, counter, path, and file errors."""
+    if phase not in VALIDATION_PHASES:
+        raise ValueError(f"phase must be one of: {', '.join(VALIDATION_PHASES)}")
     project_dir = Path(project_dir)
     errors: list[str] = []
     manifest = _load_project_yaml(project_dir / "manifest.yaml", "manifest", errors)
@@ -102,8 +124,9 @@ def validate_project(project_dir: Path) -> list[str]:
         return errors
 
     post = _mapping(manifest.get("post"), "post", errors)
-    for key in ("slug", "thesis", "status"):
+    for key in ("slug", "thesis"):
         _required_string(post, key, f"post.{key}", errors)
+    _workflow_state(post.get("status"), "post.status", errors)
     generation_round = post.get("generation_round")
     max_generation_rounds = post.get("max_generation_rounds")
     _counter(generation_round, "post.generation_round", 0, MAX_GENERATION_ROUNDS, errors)
@@ -165,7 +188,6 @@ def validate_project(project_dir: Path) -> list[str]:
         "body",
         "visual_metaphor",
         "illustration_prompt",
-        "status",
     )
     for index, value in enumerate(pages):
         field = f"pages[{index}]"
@@ -175,6 +197,7 @@ def validate_project(project_dir: Path) -> list[str]:
 
         for key in required_page_strings:
             _required_string(page, key, f"{field}.{key}", errors)
+        _workflow_state(page.get("status"), f"{field}.status", errors)
 
         page_id = page.get("id")
         if isinstance(page_id, str) and page_id:
@@ -221,7 +244,11 @@ def validate_project(project_dir: Path) -> list[str]:
         )
         card_relative = safe_relative_path(page.get("card"), f"{field}.card", errors)
         _resolved_project_path(project_dir, card_relative, f"{field}.card", errors)
-        if illustration is not None and not illustration.is_file():
+        illustration_requires_file = (
+            illustration is not None
+            and (phase == "complete" or illustration.exists())
+        )
+        if illustration_requires_file and not illustration.is_file():
             errors.append(
                 f"{field}.illustration: {illustration_relative.name} does not exist"
             )
@@ -231,10 +258,16 @@ def validate_project(project_dir: Path) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--phase",
+        choices=VALIDATION_PHASES,
+        default="complete",
+        help="validation phase (default: complete)",
+    )
     parser.add_argument("project_dir", type=Path, help="post project directory")
     args = parser.parse_args(argv)
 
-    errors = validate_project(args.project_dir)
+    errors = validate_project(args.project_dir, phase=args.phase)
     if errors:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)

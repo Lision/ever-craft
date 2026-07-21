@@ -309,6 +309,164 @@ class ManifestValidationTests(unittest.TestCase):
         self.assertTrue(any("source.md does not exist" in error for error in errors))
         self.assertTrue(any("p01-v01.png does not exist" in error for error in errors))
 
+    def test_pre_generation_accepts_only_missing_illustration_files(self):
+        for illustration in (self.project / "illustrations").iterdir():
+            illustration.unlink()
+
+        self.assertEqual(
+            validate_project(self.project, phase="pre-generation"),
+            [],
+        )
+
+    def test_pre_generation_still_reports_all_other_validation_errors(self):
+        for illustration in (self.project / "illustrations").iterdir():
+            illustration.unlink()
+        (self.project / "source.md").unlink()
+        self.mutate(
+            "manifest.yaml",
+            lambda data: (
+                data["post"].update(
+                    status="not-a-workflow-state",
+                    generation_round=4,
+                    max_generation_rounds=2,
+                ),
+                data["pages"][0].update(
+                    image_generation_count=4,
+                    max_image_generations=2,
+                ),
+                data["pages"][0].pop("illustration"),
+                data["pages"][1].pop("card"),
+            ),
+        )
+        self.mutate(
+            "visual-bible.yaml",
+            lambda data: (
+                data["canvas"].update(width=1200),
+                data["typography"].update(family="Arial"),
+                data["palette"].update(accent="#FFFFFF"),
+            ),
+        )
+
+        errors = validate_project(self.project, phase="pre-generation")
+
+        for expected in (
+            "post.status must be one of:",
+            "post.generation_round must be between 0 and 3",
+            "post.max_generation_rounds must be exactly 3",
+            "source: source.md does not exist",
+            "canvas must be exactly 1080x1440",
+            "typography.family must be Maple Mono NF CN",
+            "palette.accent must be #012FA7",
+            "pages[0].image_generation_count must be between 0 and 3",
+            "pages[0].max_image_generations must be exactly 3",
+            "pages[0].illustration: expected a non-empty relative path",
+            "pages[1].card: expected a non-empty relative path",
+        ):
+            with self.subTest(expected=expected):
+                self.assertTrue(any(expected in error for error in errors), errors)
+
+    def test_pre_generation_rejects_unsafe_illustration_paths(self):
+        self.mutate(
+            "manifest.yaml",
+            lambda data: data["pages"][0].update(illustration="../p01.png"),
+        )
+        errors = validate_project(self.project, phase="pre-generation")
+        self.assertTrue(
+            any(
+                "pages[0].illustration: path must stay inside the post directory"
+                in error
+                for error in errors
+            )
+        )
+
+    def test_pre_generation_rejects_existing_illustration_symlink_escape(self):
+        with tempfile.TemporaryDirectory() as external_dir:
+            external_image = Path(external_dir) / "p01-v01.png"
+            Image.new("RGB", (800, 520), "white").save(external_image)
+            link = self.project / "illustrations" / "p01-external.png"
+            link.symlink_to(external_image)
+            self.mutate(
+                "manifest.yaml",
+                lambda data: data["pages"][0].update(
+                    illustration="illustrations/p01-external.png"
+                ),
+            )
+
+            errors = validate_project(self.project, phase="pre-generation")
+
+            self.assertTrue(
+                any(
+                    "pages[0].illustration: path must stay inside the post directory"
+                    in error
+                    for error in errors
+                )
+            )
+
+    def test_pre_generation_rejects_existing_non_file_illustration(self):
+        illustration = self.project / "illustrations" / "p01-v01.png"
+        illustration.unlink()
+        illustration.mkdir()
+
+        errors = validate_project(self.project, phase="pre-generation")
+
+        self.assertTrue(any("p01-v01.png does not exist" in error for error in errors))
+
+    def test_complete_phase_rejects_missing_illustration(self):
+        (self.project / "illustrations" / "p01-v01.png").unlink()
+        errors = validate_project(self.project, phase="complete")
+        self.assertTrue(any("p01-v01.png does not exist" in error for error in errors))
+
+    def test_default_phase_remains_complete(self):
+        (self.project / "illustrations" / "p01-v01.png").unlink()
+        self.assertEqual(
+            validate_project(self.project),
+            validate_project(self.project, phase="complete"),
+        )
+
+    def test_api_rejects_unknown_phase(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "phase must be one of: complete, pre-generation",
+        ):
+            validate_project(self.project, phase="draft")
+
+    def test_cli_pre_generation_accepts_missing_illustrations(self):
+        for illustration in (self.project / "illustrations").iterdir():
+            illustration.unlink()
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SKILL_DIR / "scripts" / "validate_manifest.py"),
+                "--phase",
+                "pre-generation",
+                str(self.project),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), f"OK: {self.project}")
+        self.assertEqual(result.stderr, "")
+
+    def test_cli_rejects_unknown_phase_deterministically(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SKILL_DIR / "scripts" / "validate_manifest.py"),
+                "--phase",
+                "draft",
+                str(self.project),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("invalid choice: 'draft'", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(result.stdout, "")
+
     def test_cli_reports_valid_project(self):
         result = subprocess.run(
             [sys.executable, str(SKILL_DIR / "scripts" / "validate_manifest.py"), str(self.project)],

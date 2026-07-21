@@ -11,6 +11,8 @@ Approve the information architecture, generate original illustration layers, com
 
 Keep every post in a user-selected Git project at `<git-project>/<post-slug>/`; never store a post project inside this skill. Treat `manifest.yaml` as the single source of truth for state, copy, prompts, paths, dependencies, invalidations, and counters. Keep the machine-readable visual contract in `visual-bible.yaml`.
 
+`<skill-dir>` means the directory containing this `SKILL.md`. Use it in every bundled-script command because `<post-dir>` normally lives elsewhere.
+
 ## Load references only when needed
 
 - Read [references/content-schema.md](references/content-schema.md) before creating or updating project YAML, recording reviews, or finalizing a post.
@@ -38,8 +40,8 @@ draft → script_pending → script_approved → anchor_pending → anchor_appro
 | `generating` | Generate only assigned text-free illustration layers, update paths and counters, then render. Move to `reviewing`. |
 | `reviewing` | Dispatch an independent reviewer and save a new immutable `reviews/round-NN.yaml`. Move to `passed`, `revising`, or `limit_reached`. |
 | `revising` | Resolve issues in dependency order, invalidate affected artifacts, then loop through `generating` and `reviewing`. Layout-only work may render directly but must still return to `reviewing`. |
-| `passed` | Record `reviews/final.yaml`, then present Gate 3. Deliver only after explicit user approval; reviewer approval does not replace it. |
-| `limit_reached` | Stop automatic image generation, select the best current version of every affected card, record unresolved limitations in `reviews/final.yaml`, and ask for a user decision. Never claim pass. |
+| `passed` | Write the pending Gate 3 status to `manifest.yaml`, then present Gate 3. After the explicit user decision, update the manifest first and derive the immutable `reviews/final.yaml` snapshot. Reviewer approval does not replace user approval. |
+| `limit_reached` | Stop automatic image generation; record the best current versions, unresolved limitations, and pending Gate 3 decision in `manifest.yaml`. After the user decision, update the manifest first and derive immutable `reviews/final.yaml`. Never claim pass. |
 
 Explicit approval means a clear user decision at that gate; silence, prior preferences, or reviewer verdicts do not count.
 
@@ -54,19 +56,20 @@ Explicit approval means a clear user decision at that gate; silence, prior prefe
 
 ## Validate and render
 
-Run validation before every image-generation phase and before rendering:
+Require a zero exit code from pre-generation validation before every image-generation phase:
 
 ```bash
-python scripts/validate_manifest.py <post-dir>
+python3 <skill-dir>/scripts/validate_manifest.py --phase pre-generation <post-dir>
 ```
 
-The validator requires every manifest-referenced illustration to exist. Before the initial illustration pass, treat missing-illustration messages as the expected preflight boundary, fix every other error, generate directly to the declared paths, and rerun until validation exits successfully. Never render on a failed validation.
+This phase validates the manifest, visual bible, states, counters, required output paths, containment, source, and visual-bible files while permitting only declared illustration output files that do not exist yet. Do not dispatch generation on any validation error.
 
-After all requested illustration paths exist, render every page or one page with the public CLI:
+After all requested illustration paths exist, require a zero exit code from complete validation, then render every page or one page:
 
 ```bash
-python scripts/render_cards.py <post-dir>
-python scripts/render_cards.py <post-dir> <page-id>
+python3 <skill-dir>/scripts/validate_manifest.py --phase complete <post-dir>
+python3 <skill-dir>/scripts/render_cards.py <post-dir>
+python3 <skill-dir>/scripts/render_cards.py <post-dir> <page-id>
 ```
 
 Do not generate Chinese layout text inside illustrations. Let the renderer add titles, body, labels, page numbers, and signature with `Maple Mono NF CN`. Do not silently substitute another font or bypass glyph/overflow errors.
@@ -139,7 +142,7 @@ Propagate content changes: wording-only changes invalidate layout; changed visua
 - Stop retrying an issue after it remains unresolved for two consecutive review rounds, even if another counter remains.
 - Permit `passed` only when no `critical` or `major` issue remains. A reviewer may pass with recorded `minor` suggestions that do not harm reading or consistency.
 - When a counter or consecutive-unresolved limit is reached, choose and retain the best available version, list its unresolved limitation, set `limit_reached`, and stop automatic generation.
-- Require Gate 3 explicit user approval for final delivery in both `passed` and `limit_reached` outcomes.
+- Require a Gate 3 explicit user decision for both `passed` and `limit_reached`. Record the decision and status in `manifest.yaml` first; then write `reviews/final.yaml` once as a derived immutable snapshot.
 
 ## Common mistakes
 

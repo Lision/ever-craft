@@ -4,9 +4,9 @@ Read this reference before creating or changing project files, writing a review,
 
 ## Project invariants
 
-Use `manifest.yaml` as the single source of truth for current state, approved copy, prompts, artifact paths, dependencies, invalidations, and counters. Do not create a second storyboard, task-state file, or delivery manifest.
+Use `manifest.yaml` as the single source of truth for current state, approved copy, prompts, artifact paths, dependencies, invalidations, counters, and user delivery decisions. Do not create a second storyboard, task-state file, or delivery manifest.
 
-Keep each `reviews/round-NN.yaml` immutable after writing it. Corrections belong in a new round file. Use project-relative paths that stay inside `<post-dir>`.
+Keep each `reviews/round-NN.yaml` immutable after writing it. Corrections belong in a new round file. Write `reviews/final.yaml` once as an immutable snapshot derived from the manifest after Gate 3; never use it as mutable workflow state. Use project-relative paths that stay inside `<post-dir>`.
 
 ```text
 <post-dir>/
@@ -34,7 +34,7 @@ post:
   generation_round: 1
   max_generation_rounds: 3
   user_overrides:
-    page_count: 3
+    page_count: 2
     character_enabled: true
 source: source.md
 visual_bible: visual-bible.yaml
@@ -49,7 +49,10 @@ approvals:
     status: approved
     approved_at: "2026-07-21T10:10:00+08:00"
   delivery:
-    status: pending
+    status: not_requested
+    decision: null
+    decided_at: null
+finalization: null
 invalidations: []
 pages:
   - id: p01
@@ -206,13 +209,38 @@ pages:
 
 For a first-round issue, omit `resolution` because no previous correction exists. Do not use `area`, joint owners, free-form resolution values, or a compound issue covering unrelated corrections.
 
-## `reviews/final.yaml`: pass
+## Gate 3 manifest record: pass
 
-Write this form only after independent review has no open `critical` or `major` issue. A pass remains pending until Gate 3 user approval.
+After independent review has no open `critical` or `major` issue, update `manifest.yaml` first. Keep the delivery status pending while asking for Gate 3:
+
+```yaml
+post:
+  status: passed
+approvals:
+  delivery:
+    status: pending_user_approval
+    decision: null
+    decided_at: null
+finalization:
+  verdict: pass
+  generation_rounds_used: 2
+  review_rounds: 2
+  stop_reason: null
+  best_versions:
+    - {page: p01, illustration: illustrations/p01-v01.png, card: cards/p01.png}
+    - {page: p02, illustration: illustrations/p02-v02.png, card: cards/p02.png}
+  remaining_issue_ids: [p2-layout-02]
+```
+
+After explicit approval, write `approvals.delivery.status: user_approved`, `decision: approve_delivery`, and `decided_at` to `manifest.yaml` before creating `reviews/final.yaml`. If the user declines, record `status: user_declined`, `decision: decline_delivery`, and the timestamp instead; do not deliver.
+
+## `reviews/final.yaml`: pass snapshot
+
+Derive this file from the post-Gate-3 manifest and write it once. Do not update it later.
 
 ```yaml
 verdict: pass
-delivery_status: pending_user_approval
+delivery_status: user_approved
 generation_rounds_used: 2
 review_rounds: 2
 stop_reason: null
@@ -227,19 +255,51 @@ remaining_issues:
     action: 用户要求时再微调
     resolution: unresolved
 user_approval:
-  status: pending
-  approved_at: null
+  status: approved
+  decision: approve_delivery
+  decided_at: "2026-07-21T12:20:00+08:00"
 ```
 
-After explicit Gate 3 approval, change only `delivery_status` to `user_approved` and fill `user_approval`; do not rewrite round reviews.
+The snapshot must match `manifest.yaml`; never change the snapshot to record a later decision.
 
-## `reviews/final.yaml`: limit reached
+## Gate 3 manifest record: limit reached
 
-Write this form when the set or a page reaches three image generations, or when the same issue is unresolved for two consecutive rounds. Select the best existing version rather than merely preserving failed outputs. State the concrete limitation and never use a pass verdict.
+When the set or a page reaches three image generations, or the same issue is unresolved for two consecutive rounds, update `manifest.yaml` first. Select the best existing version rather than merely preserving failed outputs, and keep the decision pending while asking Gate 3:
+
+```yaml
+post:
+  status: limit_reached
+approvals:
+  delivery:
+    status: pending_user_decision
+    decision: null
+    decided_at: null
+finalization:
+  verdict: limit_reached
+  generation_rounds_used: 3
+  review_rounds: 3
+  stop_reason:
+    code: consecutive_unresolved
+    issue_id: p3-image-01
+    detail: p3-image-01 remained unresolved in rounds 2 and 3
+  best_versions:
+    - page: p03
+      illustration: illustrations/p03-v02.png
+      card: cards/p03.png
+      selected_because: v02 communicates the access boundary more clearly than v01 or v03
+      limitation: 闸门与凭证的先后关系仍不够明确
+  unresolved_issue_ids: [p3-image-01]
+```
+
+Record the user's decision in `manifest.yaml` first as one of `accept_best_with_limitation`, `revise_brief`, or `stop_without_delivery`, with a matching status and `decided_at`. If the user chooses `revise_brief`, preserve this stopped-run record before returning to Gate 1.
+
+## `reviews/final.yaml`: limit-reached snapshot
+
+Derive this file from the post-Gate-3 manifest and write it once. State the concrete limitation and never use a pass verdict.
 
 ```yaml
 verdict: limit_reached
-delivery_status: pending_user_decision
+delivery_status: accepted_best_with_limitation
 generation_rounds_used: 3
 review_rounds: 3
 stop_reason:
@@ -262,8 +322,9 @@ unresolved_issues:
       - p3-content-01
     resolution: unresolved
 user_decision:
-  status: pending
-  options: [accept_best_with_limitation, revise_brief, stop_without_delivery]
+  status: recorded
+  decision: accept_best_with_limitation
+  decided_at: "2026-07-21T12:25:00+08:00"
 ```
 
-Use stop code `set_generation_limit`, `page_generation_limit`, or `consecutive_unresolved`. Keep unresolved issue IDs stable across rounds so the consecutive-round rule is auditable.
+Use stop code `set_generation_limit`, `page_generation_limit`, or `consecutive_unresolved`. Keep unresolved issue IDs stable across rounds so the consecutive-round rule is auditable. Never mutate a round review or final snapshot to store a user decision; the manifest is canonical and every review file is derived evidence.
