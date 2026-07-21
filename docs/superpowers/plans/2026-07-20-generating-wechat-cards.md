@@ -165,7 +165,7 @@ illustration:
 post:
   slug: durable-task-lists
   thesis: 任务清单必须保存判断所需的上下文
-  status: approved_for_render
+  status: generating
   generation_round: 1
   max_generation_rounds: 3
 source: source.md
@@ -182,7 +182,7 @@ pages:
     max_image_generations: 3
     illustration: illustrations/p01-v01.png
     card: cards/p01.png
-    status: approved_for_render
+    status: generating
   - id: p02
     type: standard
     title: 先分清三件事
@@ -194,7 +194,7 @@ pages:
     max_image_generations: 3
     illustration: illustrations/p02-v01.png
     card: cards/p02.png
-    status: approved_for_render
+    status: generating
 ```
 
 - [ ] **Step 5: Write failing validator tests**

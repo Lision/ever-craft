@@ -365,6 +365,30 @@ class ManifestValidationTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertTrue(any(expected in error for error in errors), errors)
 
+    def test_accepts_generating_and_rejects_legacy_approved_for_render_state(self):
+        def set_all_statuses(data, status):
+            data["post"]["status"] = status
+            for page in data["pages"]:
+                page["status"] = status
+
+        self.mutate(
+            "manifest.yaml",
+            lambda data: set_all_statuses(data, "generating"),
+        )
+        self.assertEqual(validate_project(self.project), [])
+
+        self.mutate(
+            "manifest.yaml",
+            lambda data: set_all_statuses(data, "approved_for_render"),
+        )
+        errors = validate_project(self.project)
+        for field in ("post.status", "pages[0].status", "pages[1].status"):
+            with self.subTest(field=field):
+                self.assertTrue(
+                    any(f"{field} must be one of:" in error for error in errors),
+                    errors,
+                )
+
     def test_pre_generation_rejects_unsafe_illustration_paths(self):
         self.mutate(
             "manifest.yaml",

@@ -26,8 +26,6 @@ WORKFLOW_STATES = {
     "revising",
     "passed",
     "limit_reached",
-    # Preserve compatibility with projects created before workflow states were documented.
-    "approved_for_render",
 }
 REQUIRED_PALETTE = {
     "background": "#FAFAF8",
