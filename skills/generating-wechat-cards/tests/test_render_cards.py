@@ -132,6 +132,16 @@ class CardRendererTests(unittest.TestCase):
                     ),
                 )
 
+    def test_unsupported_glyph_in_nondisplayed_metadata_is_not_preflighted(self):
+        self.mutate(
+            "manifest.yaml",
+            lambda data: data["pages"][0].update(compressible=["\U0010ffff"]),
+        )
+
+        output = render_card(self.project, "p01")
+
+        self.assertTrue(output.is_file())
+
     def test_subtitle_and_emphasis_overflow_fixed_regions(self):
         for field, value in (
             ("subtitle", "过" * 1000),
@@ -247,6 +257,72 @@ class CardRendererTests(unittest.TestCase):
                 render_all(self.project)
 
         self._assert_sentinels_and_no_temps(sentinels)
+
+    def test_render_all_rollback_replace_failure_retains_recovery_backup(self):
+        sentinels = self._write_card_sentinels()
+        original_replace = os.replace
+
+        def fail_publication_then_rollback(source, destination):
+            source = Path(source)
+            destination = Path(destination)
+            if destination.name == "p02.png" and ".stage.tmp" in source.name:
+                raise OSError("injected p02 publication failure")
+            if destination.name == "p01.png" and ".backup.tmp" in source.name:
+                raise OSError("injected p01 rollback failure")
+            return original_replace(source, destination)
+
+        with mock.patch(
+            "render_cards.os.replace", side_effect=fail_publication_then_rollback
+        ):
+            with self.assertRaises(OSError) as rollback_exception:
+                render_all(self.project)
+
+        recovery_backups = list(
+            (self.project / "cards").glob(".p01.png.*.backup.tmp")
+        )
+        self.assertEqual(len(recovery_backups), 1)
+        self.assertEqual(
+            recovery_backups[0].read_bytes(),
+            sentinels[self.project / "cards" / "p01.png"],
+        )
+        message = str(rollback_exception.exception)
+        self.assertIn("injected p02 publication failure", message)
+        self.assertIn("injected p01 rollback failure", message)
+        self.assertIn(str(self.project / "cards" / "p01.png"), message)
+        self.assertIn(str(recovery_backups[0]), message)
+        self.assertEqual(
+            list((self.project / "cards").glob(".*.tmp")), recovery_backups
+        )
+
+    def test_render_all_reports_failed_removal_of_new_output_without_backup(self):
+        original_replace = os.replace
+        original_unlink = Path.unlink
+        p01 = self.project / "cards" / "p01.png"
+
+        def fail_second_publication(source, destination):
+            if Path(destination).name == "p02.png":
+                raise OSError("injected p02 publication failure")
+            return original_replace(source, destination)
+
+        def fail_published_output_removal(path, *args, **kwargs):
+            if path == p01:
+                raise OSError("injected p01 removal failure")
+            return original_unlink(path, *args, **kwargs)
+
+        with mock.patch(
+            "render_cards.os.replace", side_effect=fail_second_publication
+        ), mock.patch.object(Path, "unlink", new=fail_published_output_removal):
+            with self.assertRaises(OSError) as rollback_exception:
+                render_all(self.project)
+
+        message = str(rollback_exception.exception)
+        self.assertIn("injected p02 publication failure", message)
+        self.assertIn("injected p01 removal failure", message)
+        self.assertIn(str(p01), message)
+        self.assertIn("original output did not exist", message)
+        self.assertIn("no recovery backup", message)
+        self.assertTrue(p01.is_file())
+        self.assertEqual(list((self.project / "cards").glob(".*.tmp")), [])
 
     def test_single_card_save_failure_preserves_output_and_cleans_temp(self):
         sentinels = self._write_card_sentinels()
@@ -478,7 +554,9 @@ class CardRendererTests(unittest.TestCase):
     def test_page_number_must_fit_without_signature(self):
         self.mutate(
             "manifest.yaml",
-            lambda data: data["pages"][0].update(title="I", kicker="I", body="I"),
+            lambda data: data["pages"][0].update(
+                title="I", kicker="I", body="I", must_keep=[]
+            ),
         )
         self.mutate(
             "visual-bible.yaml",

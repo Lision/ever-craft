@@ -90,9 +90,13 @@ def _required_string(mapping: dict[str, Any], key: str, field: str, errors: list
         errors.append(f"{field}: expected a non-empty string")
 
 
-def _string_list(value: object, field: str, errors: list[str]) -> None:
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        errors.append(f"{field}: expected a list of strings")
+def _string_list(value: object, field: str, errors: list[str]) -> bool:
+    valid = isinstance(value, list) and all(
+        isinstance(item, str) and bool(item.strip()) for item in value
+    )
+    if not valid:
+        errors.append(f"{field}: expected a list of non-empty strings")
+    return valid
 
 
 def _phase_state(value: object, field: str, phase: str, errors: list[str]) -> None:
@@ -375,8 +379,24 @@ def validate_project(
 
         for key in required_page_strings:
             _required_string(page, key, f"{field}.{key}", errors)
-        for key in ("emphasis", "must_keep", "compressible"):
-            _string_list(page.get(key), f"{field}.{key}", errors)
+        valid_lists = {
+            key: _string_list(page.get(key), f"{field}.{key}", errors)
+            for key in ("emphasis", "must_keep", "compressible")
+        }
+        if valid_lists["must_keep"]:
+            displayed_copy = [
+                page[key]
+                for key in ("title", "kicker", "subtitle", "body")
+                if isinstance(page.get(key), str)
+            ]
+            if valid_lists["emphasis"]:
+                displayed_copy.extend(page["emphasis"])
+            for must_keep_index, must_keep in enumerate(page["must_keep"]):
+                if not any(must_keep in copy for copy in displayed_copy):
+                    errors.append(
+                        f"{field}.must_keep[{must_keep_index}] must appear verbatim "
+                        "in displayed copy"
+                    )
         _workflow_state(page.get("status"), f"{field}.status", errors)
 
         page_id = page.get("id")

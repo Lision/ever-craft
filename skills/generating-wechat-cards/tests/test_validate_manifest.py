@@ -161,9 +161,10 @@ class ManifestValidationTests(unittest.TestCase):
                     lambda data: data["pages"][0].update(subtitle="有效副标题"),
                 )
 
-    def test_requires_copy_metadata_as_lists_of_strings(self):
+    def test_requires_copy_metadata_as_lists_of_nonempty_strings(self):
         for field in ("emphasis", "must_keep", "compressible"):
-            for invalid in (None, "text", ["ok", 42]):
+            invalid_values = (None, "text", ["ok", 42], ["ok", ""], ["ok", "   "])
+            for invalid in invalid_values:
                 with self.subTest(field=field, invalid=invalid):
                     self.mutate(
                         "manifest.yaml",
@@ -172,12 +173,56 @@ class ManifestValidationTests(unittest.TestCase):
                         ),
                     )
                     self.assert_error_contains(
-                        f"pages[0].{field}: expected a list of strings"
+                        f"pages[0].{field}: expected a list of non-empty strings"
                     )
                     self.mutate(
                         "manifest.yaml",
                         lambda data, field=field: data["pages"][0].update({field: []}),
                     )
+
+    def test_rejects_must_keep_absent_from_displayed_copy(self):
+        self.mutate(
+            "manifest.yaml",
+            lambda data: data["pages"][0].update(must_keep=["必须逐字显示的句子"]),
+        )
+
+        self.assert_error_contains(
+            "pages[0].must_keep[0] must appear verbatim in displayed copy"
+        )
+
+    def test_accepts_must_keep_present_in_any_displayed_copy_field(self):
+        sentence = "必须逐字显示的句子"
+
+        def put_sentence_in_field(data, field):
+            page = data["pages"][0]
+            page.update(
+                title="标题",
+                kicker="KICKER",
+                subtitle="副标题",
+                body="正文",
+                emphasis=["强调"],
+                must_keep=[sentence],
+            )
+            page[field] = [sentence] if field == "emphasis" else sentence
+
+        for field in ("title", "kicker", "subtitle", "body", "emphasis"):
+            with self.subTest(field=field):
+                self.mutate(
+                    "manifest.yaml",
+                    lambda data, field=field: put_sentence_in_field(data, field),
+                )
+                self.assertEqual(validate_project(self.project), [])
+
+    def test_must_keep_validation_does_not_modify_manifest(self):
+        self.mutate(
+            "manifest.yaml",
+            lambda data: data["pages"][0].update(must_keep=["未显示句子"]),
+        )
+        before = (self.project / "manifest.yaml").read_bytes()
+
+        validate_project(self.project)
+
+        self.assertEqual((self.project / "manifest.yaml").read_bytes(), before)
 
     def test_validation_does_not_modify_manifest(self):
         before = (self.project / "manifest.yaml").read_bytes()

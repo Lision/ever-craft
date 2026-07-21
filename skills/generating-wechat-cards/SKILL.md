@@ -50,7 +50,7 @@ Explicit approval means a clear user decision at that gate; silence, prior prefe
 1. Save the original article or outline, user overrides, and reference links in `source.md`.
 2. Create one cover and normally three to eight section cards; add a summary only when it advances the conclusion. Use `cover`, `standard`, `comparison`, `list`, or `summary` page types.
 3. Give every page one central claim. Split dense content instead of shrinking type. Preserve user-designated sentences.
-4. Define the title, kicker, non-empty subtitle, body, emphasis list, `must_keep` and `compressible` metadata, visual metaphor, text-free illustration prompt, dependencies, canonical output paths, and retry counters in `manifest.yaml`.
+4. Define the title, kicker, non-empty subtitle, body, emphasis list, `must_keep` and `compressible` metadata, visual metaphor, text-free illustration prompt, dependencies, canonical output paths, and retry counters in `manifest.yaml`. Every `must_keep` item must be a verbatim substring of one displayed copy field; `compressible` is non-displayed editing metadata.
 5. Present Gate 1 with the thesis, page count and order, each page's claim and copy, page type, and metaphor. Record approval before creating anchors.
 6. Create the exact visual contract and anchors. Omit `character-sheet.png` when characters are disabled. Present Gate 2 before batch generation.
 

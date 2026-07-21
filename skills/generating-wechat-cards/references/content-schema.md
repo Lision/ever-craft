@@ -108,9 +108,9 @@ pages:
     invalidated_by: []
 ```
 
-Required validator-facing values are `post.slug`, `post.thesis`, `post.status`, both post counters, exact `source` and `visual_bible` paths, both Gate 1/Gate 2 approval records with non-empty `approved_at`, the required anchor paths, and a non-empty `pages` list. Every page requires `id`, a type from `cover|standard|comparison|list|summary`, `title`, `kicker`, non-empty `subtitle`, `body`, string-list `emphasis`, `must_keep`, and `compressible`, `visual_metaphor`, `illustration_prompt`, both page counters, canonical `illustration` and `card`, and `status`.
+Required validator-facing values are `post.slug`, `post.thesis`, `post.status`, both post counters, exact `source` and `visual_bible` paths, both Gate 1/Gate 2 approval records with non-empty `approved_at`, the required anchor paths, and a non-empty `pages` list. Every page requires `id`, a type from `cover|standard|comparison|list|summary`, `title`, `kicker`, non-empty `subtitle`, `body`, non-empty-string lists `emphasis`, `must_keep`, and `compressible` (each list may be empty), `visual_metaphor`, `illustration_prompt`, both page counters, canonical `illustration` and `card`, and `status`.
 
-The renderer draws `title`, `kicker`, `subtitle`, `body`, and every `emphasis` item. It validates `must_keep` and `compressible` as workflow metadata but does not draw them again. All displayed copy uses the bundled fixed font sizes and regions; glyph or overflow failures require copy/layout revision, never automatic shrinking.
+Every `must_keep` item must appear verbatim within one displayed `title`, `kicker`, `subtitle`, `body`, or `emphasis` value. The renderer draws those displayed fields; `compressible` is non-displayed editing metadata, and neither metadata list is drawn or glyph-checked separately. All displayed copy uses the bundled fixed font sizes and regions; glyph or overflow failures require copy/layout revision, never automatic shrinking.
 
 Use only these post workflow states: `draft`, `script_pending`, `script_approved`, `anchor_pending`, `anchor_approved`, `generating`, `reviewing`, `revising`, `passed`, or `limit_reached`. Record every invalidation with affected page, invalidated artifacts, reason, originating issue, and timestamp.
 

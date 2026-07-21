@@ -292,8 +292,6 @@ def _prepare_card(
                 page["kicker"],
                 page["subtitle"],
                 page["body"],
-                *page["must_keep"],
-                *page["compressible"],
                 footer,
                 signature,
             )
@@ -445,6 +443,7 @@ def render_all(project_dir: Path) -> list[Path]:
     staged: dict[Path, Path] = {}
     backups: dict[Path, Path] = {}
     published: list[Path] = []
+    retained_backups: set[Path] = set()
     try:
         for canvas, output in prepared:
             output.parent.mkdir(parents=True, exist_ok=True)
@@ -462,20 +461,42 @@ def render_all(project_dir: Path) -> list[Path]:
             for _, output in prepared:
                 os.replace(staged[output], output)
                 published.append(output)
-        except OSError:
+        except OSError as publication_error:
+            rollback_failures: list[tuple[Path, Path | None, OSError]] = []
             for output in reversed(published):
+                backup = backups.get(output)
                 try:
-                    backup = backups.get(output)
                     if backup is None:
                         output.unlink(missing_ok=True)
                     else:
                         os.replace(backup, output)
-                except OSError:
-                    pass
+                except OSError as rollback_error:
+                    if backup is not None:
+                        retained_backups.add(backup)
+                    rollback_failures.append((output, backup, rollback_error))
+            if rollback_failures:
+                details = []
+                for output, backup, rollback_error in sorted(
+                    rollback_failures, key=lambda failure: str(failure[0])
+                ):
+                    recovery = (
+                        f"recovery backup retained at {backup}"
+                        if backup is not None
+                        else "original output did not exist; no recovery backup"
+                    )
+                    details.append(f"{output} ({recovery}): {rollback_error}")
+                raise OSError(
+                    "card publication failed and rollback was incomplete; "
+                    f"publication error: {publication_error}; inconsistent outputs: "
+                    + "; ".join(details)
+                ) from publication_error
             raise
     finally:
-        for temporary in (*staged.values(), *backups.values()):
+        for temporary in staged.values():
             temporary.unlink(missing_ok=True)
+        for backup in backups.values():
+            if backup not in retained_backups:
+                backup.unlink(missing_ok=True)
     return [output for _, output in prepared]
 
 
