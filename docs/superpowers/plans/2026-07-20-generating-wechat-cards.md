@@ -12,6 +12,7 @@
 
 - Skill path: `skills/generating-wechat-cards/`; skill name: `generating-wechat-cards`.
 - Output cards are exactly 1080×1440 PNG files.
+- Default palette is fixed to sampled reference pixels: background `#FAFAF8`, surface `#F0F0EE`, ink `#0A0A08`, solid `#000000`, accent `#012FA7`, annotation `#854953`, muted `#747472`, and divider `#D1D1CF`.
 - Use `Maple Mono NF CN`; fail explicitly when it or required glyphs are unavailable; never silently fall back.
 - Generate illustrations without layout text, then add Chinese typography deterministically.
 - Require Gate 1 card-script approval, Gate 2 style-anchor approval, and Gate 3 final user approval.
@@ -140,10 +141,14 @@ typography:
   regular_path: null
   bold_path: null
 palette:
-  background: "#F7F6F2"
-  ink: "#151515"
-  accent: "#1746A2"
-  annotation: "#A24B36"
+  background: "#FAFAF8"
+  surface: "#F0F0EE"
+  ink: "#0A0A08"
+  solid: "#000000"
+  accent: "#012FA7"
+  annotation: "#854953"
+  muted: "#747472"
+  divider: "#D1D1CF"
 layout:
   margin_x: 80
   margin_top: 72
@@ -481,7 +486,7 @@ Add dispatch templates for illustration generation, independent review, and revi
 
 - [ ] **Step 4: Write `visual-system.md`**
 
-Include fixed palette and font, four page layouts, original line-art prompt recipe, optional original character rules, negative concepts, anchor passing, and originality checks. Do not copy the reference's page compositions or mascot details.
+Include the eight exact palette tokens from Global Constraints, Maple Mono NF CN, four page layouts, original line-art prompt recipe, optional original character rules, negative concepts, anchor passing, and originality checks. Do not copy the reference's page compositions or mascot details.
 
 - [ ] **Step 5: Write `content-schema.md`**
 
