@@ -6,7 +6,7 @@ Read this reference before planning pages, writing prompts, creating anchors, or
 
 Produce 1080×1440 RGB PNG cards on a stable grid with generous whitespace, thin dividers, strong hierarchy, and low visual noise.
 
-Use this exact default palette:
+Use this exact fixed palette:
 
 | Token | Hex | Use |
 | --- | --- | --- |
@@ -19,7 +19,7 @@ Use this exact default palette:
 | `muted` | `#747472` | Headers, English kickers, and secondary information |
 | `divider` | `#D1D1CF` | Dividers and weak boundaries |
 
-Override colors only when the user explicitly requests another theme; write all eight replacement values into that post's `visual-bible.yaml`.
+Do not override colors per post, including after a Gate 2 approval. Gate 2 approves the anchors made with these exact values; it is not a theme-selection gate. To introduce another theme, first update the skill's fixed palette, bundled theme, validator, documentation, and regression fixtures together, then revalidate the skill before generating any post.
 
 Use `Maple Mono NF CN` for every composed text element. Provide regular and bold font paths when discovery is unavailable. Fail explicitly if the family, required weight, Chinese glyph, or punctuation glyph is missing. Never fall back silently, bundle a font in the public skill, rasterize model-generated copy, shrink type to hide overflow, or bypass the renderer's checks.
 
@@ -31,6 +31,8 @@ Use `Maple Mono NF CN` for every composed text element. Provide regular and bold
 4. **Summary (`summary`)** — Recombine the thesis into a conclusion, action, or interaction prompt. Do not repeat the entire article.
 
 Split a page when its single claim cannot fit at the approved type scale. Keep title, body, illustration, divider, footer, signature, and safe margins inside the deterministic grid.
+
+Render every approved display field at its bundled fixed scale and region: `kicker` 24, cover `title` 90 or other `title` 72, `subtitle` 30, `body` 34, and `emphasis` 28. Include every display field in glyph and overflow preflight. Keep `must_keep` and `compressible` as validated workflow metadata; do not draw them a second time. Never shrink a field to make it fit.
 
 ## Create original line art
 

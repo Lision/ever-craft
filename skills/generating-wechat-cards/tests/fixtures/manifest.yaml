@@ -6,12 +6,26 @@ post:
   max_generation_rounds: 3
 source: source.md
 visual_bible: visual-bible.yaml
+anchors:
+  style: style-anchor.png
+  character: character-sheet.png
+approvals:
+  script:
+    status: approved
+    approved_at: "2026-07-21T09:30:00+08:00"
+  anchor:
+    status: approved
+    approved_at: "2026-07-21T10:10:00+08:00"
 pages:
   - id: p01
     type: cover
     title: 任务清单为什么总会失效
     kicker: CONTEXT / DECISIONS
+    subtitle: 动作留下了，判断依据却丢了
     body: 清单记录动作，却经常丢失决定动作的上下文。
+    emphasis: [判断上下文]
+    must_keep: [清单记录动作]
+    compressible: [判断依据却丢了]
     visual_metaphor: 角色拖着一张不断掉落背景信息的清单
     illustration_prompt: Minimal original line drawing of a task list losing context cards.
     image_generation_count: 1
@@ -23,7 +37,11 @@ pages:
     type: standard
     title: 先分清三件事
     kicker: GOAL / CONSTRAINT / NEXT
+    subtitle: 三种信息承担不同职责
     body: 目标决定方向，约束限定空间，下一步只负责推进。
+    emphasis: [目标, 约束, 下一步]
+    must_keep: []
+    compressible: []
     visual_metaphor: 三个不同形状的容器依次连接
     illustration_prompt: Minimal original line drawing of three connected containers.
     image_generation_count: 1

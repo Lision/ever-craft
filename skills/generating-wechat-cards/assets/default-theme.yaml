@@ -24,7 +24,17 @@ typography_scale:
   cover_title: 90
   standard_title: 72
   kicker: 24
+  subtitle: 30
   body: 34
+  emphasis: 28
   footer: 22
-line_spacing: {title: 18, body: 16}
+line_spacing: {title: 18, subtitle: 0, body: 16, emphasis: 0}
+regions:
+  kicker: {height: 40}
+  title: {top: 136, height: 260}
+  subtitle: {top: 420, height: 42}
+  body: {top: 486, height: 112}
+  emphasis: {top: 622, height: 42}
+  divider_y: 680
+  illustration_top: 700
 footer: {show_page_number: true, signature: ""}

@@ -33,6 +33,10 @@ class ManifestValidationTests(unittest.TestCase):
         for name in ("source.md", "manifest.yaml", "visual-bible.yaml"):
             shutil.copy2(fixture / name, self.project / name)
         (self.project / "illustrations").mkdir()
+        Image.new("RGB", (64, 64), "white").save(self.project / "style-anchor.png")
+        Image.new("RGB", (64, 64), "white").save(
+            self.project / "character-sheet.png"
+        )
         for page_id in ("p01", "p02"):
             Image.new("RGB", (800, 520), "white").save(
                 self.project / "illustrations" / f"{page_id}-v01.png"
@@ -124,7 +128,11 @@ class ManifestValidationTests(unittest.TestCase):
             "type",
             "title",
             "kicker",
+            "subtitle",
             "body",
+            "emphasis",
+            "must_keep",
+            "compressible",
             "visual_metaphor",
             "illustration_prompt",
             "image_generation_count",
@@ -135,6 +143,46 @@ class ManifestValidationTests(unittest.TestCase):
         ):
             with self.subTest(field=field):
                 self.assertTrue(any(f"pages[0].{field}" in error for error in errors))
+
+    def test_requires_subtitle_as_a_nonempty_string(self):
+        for invalid in (None, "", [], 42):
+            with self.subTest(invalid=invalid):
+                self.mutate(
+                    "manifest.yaml",
+                    lambda data, invalid=invalid: data["pages"][0].update(
+                        subtitle=invalid
+                    ),
+                )
+                self.assert_error_contains(
+                    "pages[0].subtitle: expected a non-empty string"
+                )
+                self.mutate(
+                    "manifest.yaml",
+                    lambda data: data["pages"][0].update(subtitle="有效副标题"),
+                )
+
+    def test_requires_copy_metadata_as_lists_of_strings(self):
+        for field in ("emphasis", "must_keep", "compressible"):
+            for invalid in (None, "text", ["ok", 42]):
+                with self.subTest(field=field, invalid=invalid):
+                    self.mutate(
+                        "manifest.yaml",
+                        lambda data, field=field, invalid=invalid: data["pages"][0].update(
+                            {field: invalid}
+                        ),
+                    )
+                    self.assert_error_contains(
+                        f"pages[0].{field}: expected a list of strings"
+                    )
+                    self.mutate(
+                        "manifest.yaml",
+                        lambda data, field=field: data["pages"][0].update({field: []}),
+                    )
+
+    def test_validation_does_not_modify_manifest(self):
+        before = (self.project / "manifest.yaml").read_bytes()
+        validate_project(self.project, phase="pre-generation", page_ids=["p01"])
+        self.assertEqual((self.project / "manifest.yaml").read_bytes(), before)
 
     def test_rejects_unknown_page_type(self):
         self.mutate("manifest.yaml", lambda data: data["pages"][0].update(type="poster"))
@@ -280,27 +328,97 @@ class ManifestValidationTests(unittest.TestCase):
                 "pages[0].illustration: path must stay inside the post directory"
             )
 
-    def test_accepts_symlinks_resolving_inside_project(self):
-        (self.project / "source-link.md").symlink_to(self.project / "source.md")
-        (self.project / "visual-bible-link.yaml").symlink_to(
-            self.project / "visual-bible.yaml"
-        )
-        (self.project / "illustrations" / "p01-link.png").symlink_to(
-            self.project / "illustrations" / "p01-v01.png"
-        )
+    def test_rejects_noncanonical_source_and_visual_bible_roles(self):
+        for field, value, expected in (
+            ("source", "article.md", "source must be exactly source.md"),
+            (
+                "visual_bible",
+                "theme.yaml",
+                "visual_bible must be exactly visual-bible.yaml",
+            ),
+        ):
+            with self.subTest(field=field):
+                self.mutate("manifest.yaml", lambda data: data.update({field: value}))
+                self.assert_error_contains(expected)
+                self.mutate(
+                    "manifest.yaml",
+                    lambda data: data.update(
+                        {field: {"source": "source.md", "visual_bible": "visual-bible.yaml"}[field]}
+                    ),
+                )
+
+    def test_rejects_card_paths_that_alias_canonical_inputs(self):
+        for value in ("source.md", "manifest.yaml"):
+            with self.subTest(value=value):
+                self.mutate(
+                    "manifest.yaml",
+                    lambda data, value=value: data["pages"][0].update(card=value),
+                )
+                self.assert_error_contains("pages[0].card must be exactly cards/p01.png")
+                self.mutate(
+                    "manifest.yaml",
+                    lambda data: data["pages"][0].update(card="cards/p01.png"),
+                )
+
+    def test_rejects_card_and_illustration_alias(self):
         self.mutate(
             "manifest.yaml",
-            lambda data: data.update(
-                source="source-link.md", visual_bible="visual-bible-link.yaml"
-            ),
+            lambda data: data["pages"][0].update(card="illustrations/p01-v01.png"),
         )
+        errors = validate_project(self.project)
+        self.assertTrue(any("pages[0].card must be exactly cards/p01.png" in e for e in errors))
+        self.assertTrue(any("artifact paths must be unique" in e for e in errors))
+
+    def test_rejects_duplicate_card_paths(self):
         self.mutate(
             "manifest.yaml",
-            lambda data: data["pages"][0].update(
-                illustration="illustrations/p01-link.png"
-            ),
+            lambda data: data["pages"][1].update(card="cards/p01.png"),
         )
-        self.assertEqual(validate_project(self.project), [])
+        errors = validate_project(self.project)
+        self.assertTrue(any("pages[1].card must be exactly cards/p02.png" in e for e in errors))
+        self.assertTrue(any("artifact paths must be unique" in e for e in errors))
+
+    def test_rejects_noncanonical_png_output_names(self):
+        for field, value, expected in (
+            ("card", "cards/p01.PNG", "pages[0].card must be exactly cards/p01.png"),
+            (
+                "illustration",
+                "illustrations/p01.png",
+                "pages[0].illustration must match illustrations/p01-vNN.png",
+            ),
+        ):
+            with self.subTest(field=field):
+                self.mutate(
+                    "manifest.yaml",
+                    lambda data, field=field, value=value: data["pages"][0].update(
+                        {field: value}
+                    ),
+                )
+                self.assert_error_contains(expected)
+                self.mutate(
+                    "manifest.yaml",
+                    lambda data, field=field: data["pages"][0].update(
+                        {
+                            field: {
+                                "card": "cards/p01.png",
+                                "illustration": "illustrations/p01-v01.png",
+                            }[field]
+                        }
+                    ),
+                )
+
+    def test_rejects_symlinked_output_parent_even_when_it_resolves_inside(self):
+        (self.project / "real-cards").mkdir()
+        (self.project / "cards").symlink_to(self.project / "real-cards", target_is_directory=True)
+        self.assert_error_contains("pages[0].card: output path must not use symlinks")
+
+    def test_rejects_symlinked_output_file_even_when_it_resolves_inside(self):
+        (self.project / "cards").mkdir()
+        (self.project / "cards" / "target.png").write_bytes(b"sentinel")
+        (self.project / "cards" / "p01.png").symlink_to(
+            self.project / "cards" / "target.png"
+        )
+        self.assert_error_contains("pages[0].card: output path must not use symlinks")
 
     def test_requires_existing_source_visual_bible_and_illustration(self):
         (self.project / "source.md").unlink()
@@ -317,6 +435,220 @@ class ManifestValidationTests(unittest.TestCase):
             validate_project(self.project, phase="pre-generation"),
             [],
         )
+
+    def test_both_phases_require_approved_gates_with_timestamps(self):
+        for phase in ("pre-generation", "complete"):
+            for gate in ("script", "anchor"):
+                with self.subTest(phase=phase, gate=gate, missing="status"):
+                    self.mutate(
+                        "manifest.yaml",
+                        lambda data, gate=gate: data["approvals"][gate].update(
+                            status="pending"
+                        ),
+                    )
+                    errors = validate_project(self.project, phase=phase)
+                    self.assertTrue(
+                        any(f"approvals.{gate}.status must be approved" in e for e in errors),
+                        errors,
+                    )
+                    self.mutate(
+                        "manifest.yaml",
+                        lambda data, gate=gate: data["approvals"][gate].update(
+                            status="approved"
+                        ),
+                    )
+                with self.subTest(phase=phase, gate=gate, missing="timestamp"):
+                    self.mutate(
+                        "manifest.yaml",
+                        lambda data, gate=gate: data["approvals"][gate].update(
+                            approved_at=""
+                        ),
+                    )
+                    errors = validate_project(self.project, phase=phase)
+                    self.assertTrue(
+                        any(
+                            f"approvals.{gate}.approved_at: expected a non-empty string"
+                            in e
+                            for e in errors
+                        ),
+                        errors,
+                    )
+                    self.mutate(
+                        "manifest.yaml",
+                        lambda data, gate=gate: data["approvals"][gate].update(
+                            approved_at="2026-07-21T10:10:00+08:00"
+                        ),
+                    )
+
+    def test_both_phases_reject_draft_and_script_pending_states(self):
+        for phase in ("pre-generation", "complete"):
+            for status in ("draft", "script_pending"):
+                with self.subTest(phase=phase, status=status):
+                    self.mutate(
+                        "manifest.yaml",
+                        lambda data, status=status: data["post"].update(status=status),
+                    )
+                    errors = validate_project(self.project, phase=phase)
+                    self.assertTrue(
+                        any(f"post.status is not valid for {phase}" in e for e in errors),
+                        errors,
+                    )
+                    self.mutate(
+                        "manifest.yaml",
+                        lambda data: data["post"].update(status="generating"),
+                    )
+
+    def test_pre_generation_requires_every_page_to_be_generating_or_revising(self):
+        self.mutate(
+            "manifest.yaml",
+            lambda data: data["pages"][1].update(status="reviewing"),
+        )
+        errors = validate_project(
+            self.project, phase="pre-generation", page_ids=["p01"]
+        )
+        self.assertTrue(
+            any("pages[1].status is not valid for pre-generation" in e for e in errors),
+            errors,
+        )
+
+    def test_both_phases_require_style_anchor_file(self):
+        (self.project / "style-anchor.png").unlink()
+        for phase in ("pre-generation", "complete"):
+            with self.subTest(phase=phase):
+                errors = validate_project(self.project, phase=phase)
+                self.assertTrue(
+                    any("anchors.style: style-anchor.png does not exist" in e for e in errors),
+                    errors,
+                )
+
+    def test_character_anchor_is_required_only_when_characters_are_enabled(self):
+        (self.project / "character-sheet.png").unlink()
+        errors = validate_project(self.project, phase="complete")
+        self.assertTrue(
+            any("anchors.character: character-sheet.png does not exist" in e for e in errors),
+            errors,
+        )
+
+        self.mutate(
+            "visual-bible.yaml",
+            lambda data: data["illustration"].update(character_enabled=False),
+        )
+        self.mutate(
+            "manifest.yaml",
+            lambda data: data["anchors"].update(character=None),
+        )
+        self.assertEqual(validate_project(self.project, phase="complete"), [])
+
+    def test_character_enabled_requires_a_boolean(self):
+        for invalid in (None, 1, "false"):
+            with self.subTest(invalid=invalid):
+                self.mutate(
+                    "visual-bible.yaml",
+                    lambda data, invalid=invalid: data["illustration"].update(
+                        character_enabled=invalid
+                    ),
+                )
+                self.assert_error_contains(
+                    "illustration.character_enabled must be true or false"
+                )
+                self.mutate(
+                    "visual-bible.yaml",
+                    lambda data: data["illustration"].update(character_enabled=True),
+                )
+
+    def test_pre_generation_rejects_exhausted_set_but_complete_allows_it(self):
+        self.mutate(
+            "manifest.yaml",
+            lambda data: data["post"].update(generation_round=3),
+        )
+        self.assertTrue(
+            any(
+                "post.generation_round has reached the generation limit" in e
+                for e in validate_project(self.project, phase="pre-generation")
+            )
+        )
+        self.assertEqual(validate_project(self.project, phase="complete"), [])
+
+    def test_pre_generation_rejects_only_exhausted_target_pages(self):
+        self.mutate(
+            "manifest.yaml",
+            lambda data: data["pages"][0].update(image_generation_count=3),
+        )
+        errors = validate_project(
+            self.project, phase="pre-generation", page_ids=["p01"]
+        )
+        self.assertTrue(
+            any("pages[0].image_generation_count has reached the generation limit" in e for e in errors),
+            errors,
+        )
+        self.assertEqual(
+            validate_project(self.project, phase="pre-generation", page_ids=["p02"]),
+            [],
+        )
+
+    def test_complete_allows_page_generation_count_at_limit(self):
+        self.mutate(
+            "manifest.yaml",
+            lambda data: data["pages"][0].update(image_generation_count=3),
+        )
+        self.assertEqual(validate_project(self.project, phase="complete"), [])
+
+    def test_pre_generation_rejects_issue_unresolved_in_two_consecutive_rounds(self):
+        reviews = self.project / "reviews"
+        reviews.mkdir()
+        for round_number in (1, 2):
+            (reviews / f"round-{round_number:02d}.yaml").write_text(
+                yaml.safe_dump(
+                    {
+                        "round": round_number,
+                        "pages": [
+                            {
+                                "page": "p01",
+                                "issues": [
+                                    {
+                                        "id": "p1-image-01",
+                                        "resolution": "unresolved",
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                    sort_keys=False,
+                ),
+                encoding="utf-8",
+            )
+
+        errors = validate_project(
+            self.project, phase="pre-generation", page_ids=["p01"]
+        )
+        self.assertTrue(
+            any("p1-image-01 is unresolved in two consecutive review rounds" in e for e in errors),
+            errors,
+        )
+
+    def test_targeted_pre_generation_only_permits_missing_target_illustrations(self):
+        (self.project / "illustrations" / "p01-v01.png").unlink()
+        self.assertEqual(
+            validate_project(
+                self.project, phase="pre-generation", page_ids=["p01"]
+            ),
+            [],
+        )
+
+        (self.project / "illustrations" / "p02-v01.png").unlink()
+        errors = validate_project(
+            self.project, phase="pre-generation", page_ids=["p01"]
+        )
+        self.assertTrue(
+            any("pages[1].illustration: p02-v01.png does not exist" in e for e in errors),
+            errors,
+        )
+
+    def test_pre_generation_rejects_unknown_target_page(self):
+        errors = validate_project(
+            self.project, phase="pre-generation", page_ids=["p99"]
+        )
+        self.assertIn("unknown target page id: p99", errors)
 
     def test_pre_generation_still_reports_all_other_validation_errors(self):
         for illustration in (self.project / "illustrations").iterdir():
@@ -470,6 +802,28 @@ class ManifestValidationTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), f"OK: {self.project}")
+        self.assertEqual(result.stderr, "")
+
+    def test_cli_pre_generation_accepts_repeated_page_id_targets(self):
+        (self.project / "illustrations" / "p01-v01.png").unlink()
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SKILL_DIR / "scripts" / "validate_manifest.py"),
+                "--phase",
+                "pre-generation",
+                "--page-id",
+                "p01",
+                "--page-id",
+                "p01",
+                str(self.project),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), f"OK: {self.project}")
         self.assertEqual(result.stderr, "")
 

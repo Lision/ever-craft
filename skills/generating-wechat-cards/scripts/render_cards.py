@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import copy
 import os
+import shutil
 import sys
 import uuid
 from pathlib import Path
@@ -24,13 +25,7 @@ FONT_CANDIDATES = {
     "bold": [Path.home() / "Library/Fonts/MapleMono-NF-CN-Bold.ttf"],
 }
 FOOTER_GAP = 40
-KICKER_HEIGHT = 40
 MIN_VERTICAL_GAP = 24
-TITLE_TOP = 136
-TITLE_HEIGHT = 260
-BODY_TOP = 420
-BODY_HEIGHT = 150
-ILLUSTRATION_TOP = 660
 
 
 class LayoutOverflowError(RuntimeError):
@@ -175,6 +170,7 @@ def _preflight_effective_layout(
     theme: dict[str, Any], footer_font: ImageFont.FreeTypeFont, page_number: str
 ) -> dict[str, int]:
     layout = theme["layout"]
+    regions = theme["regions"]
     signature = theme["footer"]["signature"]
     if not isinstance(signature, str):
         raise ValueError("footer.signature must be a string")
@@ -191,7 +187,8 @@ def _preflight_effective_layout(
     margin_top = layout["margin_top"]
     if (
         margin_top < 0
-        or margin_top + KICKER_HEIGHT + MIN_VERTICAL_GAP > TITLE_TOP
+        or margin_top + regions["kicker"]["height"] + MIN_VERTICAL_GAP
+        > regions["title"]["top"]
     ):
         raise LayoutOverflowError(
             "layout.margin_top places the kicker outside or into the title region"
@@ -209,7 +206,7 @@ def _preflight_effective_layout(
             "layout.margin_bottom places the footer outside the canvas"
         )
     illustration_height = layout["illustration_height"]
-    illustration_bottom = ILLUSTRATION_TOP + illustration_height
+    illustration_bottom = regions["illustration_top"] + illustration_height
     if (
         illustration_height <= 0
         or illustration_bottom > theme["canvas"]["height"]
@@ -242,31 +239,31 @@ def _contain_illustration(
     left, top, right, bottom = box
     max_size = (right - left, bottom - top)
     with Image.open(illustration_path) as source:
-        illustration = source.convert("RGB")
+        illustration = source.convert("RGBA")
         illustration.thumbnail(max_size, Image.Resampling.LANCZOS)
     x = left + (max_size[0] - illustration.width) // 2
     y = top + (max_size[1] - illustration.height) // 2
-    canvas.paste(illustration, (x, y))
+    canvas.paste(illustration, (x, y), illustration.getchannel("A"))
 
 
-def render_card(project_dir: Path, page_id: str) -> Path:
-    """Validate, draw typography, contain illustration, and atomically write PNG."""
-    project_dir = Path(project_dir)
-    errors = validate_project(project_dir)
+def _validated_project(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    errors = validate_project(project_dir, phase="complete")
     if errors:
         raise ValueError("project validation failed:\n" + "\n".join(errors))
-
     manifest = load_yaml(project_dir / "manifest.yaml")
-    visual_bible = load_yaml(project_dir / manifest["visual_bible"])
-    theme = _merged_theme(visual_bible)
-    pages = manifest["pages"]
-    try:
-        page_index, page = next(
-            (index, value) for index, value in enumerate(pages) if value["id"] == page_id
-        )
-    except StopIteration as error:
-        raise KeyError(f"unknown page id: {page_id}") from error
+    visual_bible = load_yaml(project_dir / "visual-bible.yaml")
+    return manifest, visual_bible, _merged_theme(visual_bible)
 
+
+def _prepare_card(
+    project_dir: Path,
+    manifest: dict[str, Any],
+    visual_bible: dict[str, Any],
+    theme: dict[str, Any],
+    page_index: int,
+    page: dict[str, Any],
+) -> tuple[Image.Image, Path]:
+    pages = manifest["pages"]
     regular_path, bold_path = find_font_paths(visual_bible)
     scale = theme["typography_scale"]
     title_size = (
@@ -277,68 +274,105 @@ def render_card(project_dir: Path, page_id: str) -> Path:
     fonts = {
         "title": ImageFont.truetype(str(bold_path), title_size),
         "kicker": ImageFont.truetype(str(regular_path), scale["kicker"]),
+        "subtitle": ImageFont.truetype(str(regular_path), scale["subtitle"]),
         "body": ImageFont.truetype(str(regular_path), scale["body"]),
+        "emphasis": ImageFont.truetype(str(bold_path), scale["emphasis"]),
         "footer": ImageFont.truetype(str(regular_path), scale["footer"]),
     }
 
     footer = f"{page_index + 1:02d} / {len(pages):02d}"
     signature = theme["footer"]["signature"]
+    emphasis = " / ".join(page["emphasis"])
     geometry = _preflight_effective_layout(theme, fonts["footer"], footer)
-    assert_glyph_coverage(bold_path, page["title"])
+    assert_glyph_coverage(bold_path, page["title"] + emphasis)
     assert_glyph_coverage(
         regular_path,
-        "\n".join((page["kicker"], page["body"], footer, signature)),
+        "\n".join(
+            (
+                page["kicker"],
+                page["subtitle"],
+                page["body"],
+                *page["must_keep"],
+                *page["compressible"],
+                footer,
+                signature,
+            )
+        ),
     )
 
     canvas_config = theme["canvas"]
     palette = theme["palette"]
     layout = theme["layout"]
+    regions = theme["regions"]
     width, height = canvas_config["width"], canvas_config["height"]
     margin_x = layout["margin_x"]
     content_width = geometry["content_width"]
     canvas = Image.new("RGB", (width, height), palette["background"])
     draw = ImageDraw.Draw(canvas)
 
-    draw_text_block(
-        draw,
-        page["kicker"],
-        (margin_x, layout["margin_top"]),
-        fonts["kicker"],
-        palette["accent"],
-        content_width,
-        KICKER_HEIGHT,
-        0,
+    copy_blocks = (
+        (
+            page["kicker"],
+            "kicker",
+            layout["margin_top"],
+            regions["kicker"]["height"],
+            palette["accent"],
+        ),
+        (
+            page["title"],
+            "title",
+            regions["title"]["top"],
+            regions["title"]["height"],
+            palette["ink"],
+        ),
+        (
+            page["subtitle"],
+            "subtitle",
+            regions["subtitle"]["top"],
+            regions["subtitle"]["height"],
+            palette["ink"],
+        ),
+        (
+            page["body"],
+            "body",
+            regions["body"]["top"],
+            regions["body"]["height"],
+            palette["muted"],
+        ),
+        (
+            emphasis,
+            "emphasis",
+            regions["emphasis"]["top"],
+            regions["emphasis"]["height"],
+            palette["annotation"],
+        ),
     )
-    draw_text_block(
-        draw,
-        page["title"],
-        (margin_x, TITLE_TOP),
-        fonts["title"],
-        palette["ink"],
-        content_width,
-        TITLE_HEIGHT,
-        theme["line_spacing"]["title"],
-    )
-    draw_text_block(
-        draw,
-        page["body"],
-        (margin_x, BODY_TOP),
-        fonts["body"],
-        palette["muted"],
-        content_width,
-        BODY_HEIGHT,
-        theme["line_spacing"]["body"],
-    )
-    draw.line((margin_x, 610, width - margin_x, 610), fill=palette["divider"], width=2)
+    for text, kind, top, region_height, fill in copy_blocks:
+        draw_text_block(
+            draw,
+            text,
+            (margin_x, top),
+            fonts[kind],
+            fill,
+            content_width,
+            region_height,
+            theme["line_spacing"].get(kind, 0),
+        )
 
+    draw.line(
+        (margin_x, regions["divider_y"], width - margin_x, regions["divider_y"]),
+        fill=palette["divider"],
+        width=2,
+    )
+    illustration_top = regions["illustration_top"]
     _contain_illustration(
         canvas,
         project_dir / page["illustration"],
         (
             margin_x,
-            ILLUSTRATION_TOP,
+            illustration_top,
             width - margin_x,
-            ILLUSTRATION_TOP + layout["illustration_height"],
+            illustration_top + layout["illustration_height"],
         ),
     )
 
@@ -360,25 +394,89 @@ def render_card(project_dir: Path, page_id: str) -> Path:
             anchor="rt",
         )
 
-    output = project_dir / page["card"]
+    output = project_dir / "cards" / f"{page['id']}.png"
+    return canvas, output
+
+
+def _temporary_path(output: Path, purpose: str) -> Path:
+    return output.with_name(
+        f".{output.name}.{uuid.uuid4().hex}.{purpose}.tmp"
+    )
+
+
+def _save_card_atomically(canvas: Image.Image, output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
-    temporary = output.with_name(f".{output.name}.{uuid.uuid4().hex}.tmp")
+    temporary = _temporary_path(output, "render")
     try:
         canvas.save(temporary, format="PNG", optimize=False, compress_level=9)
         os.replace(temporary, output)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def render_card(project_dir: Path, page_id: str) -> Path:
+    """Validate, draw typography, contain illustration, and atomically write PNG."""
+    project_dir = Path(project_dir)
+    manifest, visual_bible, theme = _validated_project(project_dir)
+    pages = manifest["pages"]
+    try:
+        page_index, page = next(
+            (index, value) for index, value in enumerate(pages) if value["id"] == page_id
+        )
+    except StopIteration as error:
+        raise KeyError(f"unknown page id: {page_id}") from error
+
+    canvas, output = _prepare_card(
+        project_dir, manifest, visual_bible, theme, page_index, page
+    )
+    _save_card_atomically(canvas, output)
     return output
 
 
 def render_all(project_dir: Path) -> list[Path]:
     """Render and return cards in manifest page order."""
     project_dir = Path(project_dir)
-    errors = validate_project(project_dir)
-    if errors:
-        raise ValueError("project validation failed:\n" + "\n".join(errors))
-    manifest = load_yaml(project_dir / "manifest.yaml")
-    return [render_card(project_dir, page["id"]) for page in manifest["pages"]]
+    manifest, visual_bible, theme = _validated_project(project_dir)
+    prepared = [
+        _prepare_card(project_dir, manifest, visual_bible, theme, index, page)
+        for index, page in enumerate(manifest["pages"])
+    ]
+
+    staged: dict[Path, Path] = {}
+    backups: dict[Path, Path] = {}
+    published: list[Path] = []
+    try:
+        for canvas, output in prepared:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            temporary = _temporary_path(output, "stage")
+            staged[output] = temporary
+            canvas.save(temporary, format="PNG", optimize=False, compress_level=9)
+        for _, output in prepared:
+            if output.exists():
+                if not output.is_file():
+                    raise OSError(f"card output is not a regular file: {output}")
+                backup = _temporary_path(output, "backup")
+                shutil.copy2(output, backup)
+                backups[output] = backup
+        try:
+            for _, output in prepared:
+                os.replace(staged[output], output)
+                published.append(output)
+        except OSError:
+            for output in reversed(published):
+                try:
+                    backup = backups.get(output)
+                    if backup is None:
+                        output.unlink(missing_ok=True)
+                    else:
+                        os.replace(backup, output)
+                except OSError:
+                    pass
+            raise
+    finally:
+        for temporary in (*staged.values(), *backups.values()):
+            temporary.unlink(missing_ok=True)
+    return [output for _, output in prepared]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -393,7 +491,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.page_id
             else render_all(args.project_dir)
         )
-    except (FileNotFoundError, KeyError, LayoutOverflowError, ValueError) as error:
+    except (FileNotFoundError, KeyError, LayoutOverflowError, OSError, ValueError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
     for output in outputs:

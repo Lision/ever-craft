@@ -50,7 +50,7 @@ Explicit approval means a clear user decision at that gate; silence, prior prefe
 1. Save the original article or outline, user overrides, and reference links in `source.md`.
 2. Create one cover and normally three to eight section cards; add a summary only when it advances the conclusion. Use `cover`, `standard`, `comparison`, `list`, or `summary` page types.
 3. Give every page one central claim. Split dense content instead of shrinking type. Preserve user-designated sentences.
-4. Define the title, kicker or subtitle, body, emphasis, visual metaphor, text-free illustration prompt, dependencies, output paths, and retry counters in `manifest.yaml`.
+4. Define the title, kicker, non-empty subtitle, body, emphasis list, `must_keep` and `compressible` metadata, visual metaphor, text-free illustration prompt, dependencies, canonical output paths, and retry counters in `manifest.yaml`.
 5. Present Gate 1 with the thesis, page count and order, each page's claim and copy, page type, and metaphor. Record approval before creating anchors.
 6. Create the exact visual contract and anchors. Omit `character-sheet.png` when characters are disabled. Present Gate 2 before batch generation.
 
@@ -62,7 +62,14 @@ Require a zero exit code from pre-generation validation before every image-gener
 python3 <skill-dir>/scripts/validate_manifest.py --phase pre-generation <post-dir>
 ```
 
-This phase validates the manifest, visual bible, states, counters, required output paths, containment, source, and visual-bible files while permitting only declared illustration output files that do not exist yet. Do not dispatch generation on any validation error.
+This phase validates both approval records and timestamps, required anchors, phase states, retry limits, consecutive unresolved issues, canonical non-symlinked output paths, containment, source, and visual-bible files. With no target it permits missing illustrations for every page. For a local revision, repeat `--page-id`; only those target illustrations may be missing and every non-target illustration must exist:
+
+```bash
+python3 <skill-dir>/scripts/validate_manifest.py --phase pre-generation \
+  --page-id p03 --page-id p05 <post-dir>
+```
+
+Do not dispatch generation on any validation error, and never let validation modify `manifest.yaml`.
 
 After all requested illustration paths exist, require a zero exit code from complete validation, then render every page or one page:
 
@@ -72,7 +79,7 @@ python3 <skill-dir>/scripts/render_cards.py <post-dir>
 python3 <skill-dir>/scripts/render_cards.py <post-dir> <page-id>
 ```
 
-Do not generate Chinese layout text inside illustrations. Let the renderer add titles, body, labels, page numbers, and signature with `Maple Mono NF CN`. Do not silently substitute another font or bypass glyph/overflow errors.
+Do not generate Chinese layout text inside illustrations. Let the renderer add kicker, title, subtitle, body, emphasis, page numbers, and signature with `Maple Mono NF CN`; `must_keep` and `compressible` remain metadata. Do not silently substitute another font, shrink copy, or bypass glyph/overflow errors. The eight palette values are fixed per skill and cannot be overridden by a post or by Gate 2.
 
 ## Dispatch illustration generation
 

@@ -135,7 +135,7 @@ Skill 支持两种等价入口：
   | `muted` | `#747472` | 页眉、英文标签和次要信息 |
   | `divider` | `#D1D1CF` | 分隔线和弱边界 |
 
-- 上述颜色是本 skill 的默认确定值；用户明确要求换主题时才允许覆盖，并把覆盖值写入当次 `visual-bible.yaml`。
+- 上述八色是本 skill 的确定色板，单篇工程不允许覆盖。如需更换主题，必须先更新 skill 内的确定色板、默认主题与验证器，并重新验证后再生成。Gate 2 只确认使用该固定色板的视觉锚点，不开放当篇换色。
 - 字体：本地安装的 `Maple Mono NF CN`，无静默 fallback。
 - 布局：大面积留白、细分隔线、明确的信息层级和稳定网格。
 - 插图：原创、简易、不规则的手绘线条；避免复杂光影、3D、摄影感和装饰堆叠。
@@ -166,7 +166,7 @@ Skill 支持两种等价入口：
 
 ### 3. 确定性排版
 
-配套渲染脚本将标题、正文、标签、页码、署名和插图合成为 PNG。
+配套渲染脚本将 kicker、标题、副标题、正文、强调内容、页码、署名和插图合成为 PNG。`must_keep` 和 `compressible` 只是工作流元数据，不重复渲染。
 
 渲染前必须验证：
 
@@ -327,7 +327,7 @@ skills/generating-wechat-cards/
 - `references/content-schema.md`：保存 manifest、visual bible 和 review schema。
 - `scripts/render_cards.py`：使用 `Maple Mono NF CN` 确定性合成卡片。
 - `scripts/validate_manifest.py`：在生图和渲染前验证字段、文件、依赖、状态和轮次。
-- `assets/default-theme.yaml`：保存可覆盖的默认尺寸、色板和排版参数。
+- `assets/default-theme.yaml`：保存确定尺寸、八色色板、字号和文本区域；单篇工程不得覆盖这些固定值。
 
 ## 验证策略
 

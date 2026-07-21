@@ -6,7 +6,7 @@ Read this reference before creating or changing project files, writing a review,
 
 Use `manifest.yaml` as the single source of truth for current state, approved copy, prompts, artifact paths, dependencies, invalidations, counters, and user delivery decisions. Do not create a second storyboard, task-state file, or delivery manifest.
 
-Keep each `reviews/round-NN.yaml` immutable after writing it. Corrections belong in a new round file. Write `reviews/final.yaml` once as an immutable snapshot derived from the manifest after Gate 3; never use it as mutable workflow state. Use project-relative paths that stay inside `<post-dir>`.
+Keep each `reviews/round-NN.yaml` immutable after writing it. Corrections belong in a new round file. Write `reviews/final.yaml` once as an immutable snapshot derived from the manifest after Gate 3; never use it as mutable workflow state. Use the exact role paths shown below: `source.md`, `visual-bible.yaml`, `cards/<page-id>.png`, and versioned `illustrations/<page-id>-vNN.png`. Use lowercase `.png`, unique page/card/illustration paths, and real output directories; never use a symlink as an output or output parent.
 
 ```text
 <post-dir>/
@@ -108,13 +108,15 @@ pages:
     invalidated_by: []
 ```
 
-Required validator-facing values are `post.slug`, `post.thesis`, `post.status`, both post counters, `source`, `visual_bible`, and a non-empty `pages` list. Every page requires `id`, a type from `cover|standard|comparison|list|summary`, `title`, `kicker`, `body`, `visual_metaphor`, `illustration_prompt`, both page counters, `illustration`, `card`, and `status`. Keep workflow and approval fields even when the current validator does not enforce them.
+Required validator-facing values are `post.slug`, `post.thesis`, `post.status`, both post counters, exact `source` and `visual_bible` paths, both Gate 1/Gate 2 approval records with non-empty `approved_at`, the required anchor paths, and a non-empty `pages` list. Every page requires `id`, a type from `cover|standard|comparison|list|summary`, `title`, `kicker`, non-empty `subtitle`, `body`, string-list `emphasis`, `must_keep`, and `compressible`, `visual_metaphor`, `illustration_prompt`, both page counters, canonical `illustration` and `card`, and `status`.
+
+The renderer draws `title`, `kicker`, `subtitle`, `body`, and every `emphasis` item. It validates `must_keep` and `compressible` as workflow metadata but does not draw them again. All displayed copy uses the bundled fixed font sizes and regions; glyph or overflow failures require copy/layout revision, never automatic shrinking.
 
 Use only these post workflow states: `draft`, `script_pending`, `script_approved`, `anchor_pending`, `anchor_approved`, `generating`, `reviewing`, `revising`, `passed`, or `limit_reached`. Record every invalidation with affected page, invalidated artifacts, reason, originating issue, and timestamp.
 
 ## `visual-bible.yaml`
 
-Record the complete approved visual system. Keep all eight palette tokens exact unless the user explicitly approves a replacement theme. Use null font paths only when local discovery can locate and verify both required Maple weights.
+Record the complete approved visual system. Keep all eight palette tokens exact; per-post replacement themes are forbidden. Gate 2 approves only the style and optional character anchors made with those fixed values. Use null font paths only when local discovery can locate and verify both required Maple weights.
 
 ```yaml
 canvas: {width: 1080, height: 1440}
