@@ -11,6 +11,8 @@ from typing import Any, Iterable
 
 import yaml
 
+from layout_engine import LAYOUT_VERSION, layout_fingerprint
+
 
 PAGE_TYPES = {"cover", "standard", "comparison", "list", "summary"}
 MAX_GENERATION_ROUNDS = 3
@@ -37,6 +39,16 @@ REQUIRED_PALETTE = {
     "annotation": "#854953",
     "muted": "#747472",
     "divider": "#D1D1CF",
+}
+REQUIRED_LAYOUT = {
+    "margin_x": 80,
+    "margin_top": 72,
+    "margin_bottom": 72,
+    "block_gap": 24,
+    "copy_to_divider_gap": 24,
+    "divider_to_illustration_gap": 20,
+    "illustration_to_footer_gap": 40,
+    "min_illustration_share": 0.5,
 }
 PRE_GENERATION_STATES = {"generating", "revising"}
 COMPLETE_STATES = {"generating", "reviewing", "revising", "passed", "limit_reached"}
@@ -120,6 +132,10 @@ def _counter(value: object, field: str, minimum: int, maximum: int, errors: list
 
 def _is_exact_integer(value: object, expected: int) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value == expected
+
+
+def _is_number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def _load_project_yaml(path: Path, field: str, errors: list[str]) -> dict[str, Any] | None:
@@ -270,6 +286,7 @@ def validate_project(
         errors.append(f"source: {source_relative.name} does not exist")
 
     visual_bible = None
+    visual_layout: dict[str, Any] = {}
     if visual_bible_path is not None:
         visual_bible = _load_project_yaml(
             project_dir / visual_bible_path, "visual_bible", errors
@@ -287,6 +304,16 @@ def validate_project(
         for token, expected in REQUIRED_PALETTE.items():
             if palette.get(token) != expected:
                 errors.append(f"palette.{token} must be {expected}")
+        visual_layout = _mapping(visual_bible.get("layout"), "layout", errors)
+        for key, expected in REQUIRED_LAYOUT.items():
+            value = visual_layout.get(key)
+            valid = (
+                _is_exact_integer(value, expected)
+                if isinstance(expected, int)
+                else _is_number(value) and value == expected
+            )
+            if not valid:
+                errors.append(f"layout.{key} must be exactly {expected}")
 
     anchors = _mapping(manifest.get("anchors"), "anchors", errors)
     anchor_relatives: list[tuple[str, Path | None]] = []
@@ -417,6 +444,93 @@ def validate_project(
             errors.append(f"{field}.type: expected a string")
         elif page_type not in PAGE_TYPES:
             errors.append(f"{field}.type must be one of: {', '.join(sorted(PAGE_TYPES))}")
+
+        page_layout = _mapping(page.get("layout"), f"{field}.layout", errors)
+        if not _is_exact_integer(page_layout.get("version"), LAYOUT_VERSION):
+            errors.append(
+                f"{field}.layout.version must be exactly {LAYOUT_VERSION}"
+            )
+        fingerprint = page_layout.get("fingerprint")
+        if (
+            visual_bible is not None
+            and fingerprint != layout_fingerprint(page, visual_bible)
+        ):
+            errors.append(
+                f"{field}.layout.fingerprint is stale; recalculate the layout"
+            )
+        for key in ("copy_bottom", "divider_y"):
+            value = page_layout.get(key)
+            if not isinstance(value, int) or isinstance(value, bool):
+                errors.append(f"{field}.layout.{key} must be an integer")
+
+        box = _mapping(
+            page_layout.get("illustration_box"),
+            f"{field}.layout.illustration_box",
+            errors,
+        )
+        for key in ("x", "y", "width", "height"):
+            value = box.get(key)
+            if not isinstance(value, int) or isinstance(value, bool):
+                errors.append(
+                    f"{field}.layout.illustration_box.{key} must be an integer"
+                )
+        share = page_layout.get("illustration_share")
+        if not _is_number(share):
+            errors.append(f"{field}.layout.illustration_share must be a number")
+        elif share < REQUIRED_LAYOUT["min_illustration_share"]:
+            errors.append(
+                f"{field}.layout.illustration_share must be at least "
+                f"{REQUIRED_LAYOUT['min_illustration_share']}"
+            )
+
+        if all(
+            isinstance(box.get(key), int) and not isinstance(box.get(key), bool)
+            for key in ("x", "y", "width", "height")
+        ):
+            margin_x = REQUIRED_LAYOUT["margin_x"]
+            expected_width = 1080 - 2 * margin_x
+            if box["x"] != margin_x or box["width"] != expected_width:
+                errors.append(
+                    f"{field}.layout.illustration_box must use the horizontal "
+                    "safe margins"
+                )
+            if (
+                box["y"] < REQUIRED_LAYOUT["margin_top"]
+                or box["height"] <= 0
+                or box["y"] + box["height"] > 1440 - REQUIRED_LAYOUT["margin_bottom"]
+            ):
+                errors.append(
+                    f"{field}.layout.illustration_box must stay inside the "
+                    "vertical safe area"
+                )
+            copy_bottom = page_layout.get("copy_bottom")
+            divider_y = page_layout.get("divider_y")
+            if (
+                isinstance(copy_bottom, int)
+                and not isinstance(copy_bottom, bool)
+                and isinstance(divider_y, int)
+                and not isinstance(divider_y, bool)
+                and not (
+                    REQUIRED_LAYOUT["margin_top"]
+                    <= copy_bottom
+                    < divider_y
+                    < box["y"]
+                )
+            ):
+                errors.append(
+                    f"{field}.layout must place copy before the divider and "
+                    "illustration"
+                )
+            usable_height = (
+                box["y"] + box["height"] - REQUIRED_LAYOUT["margin_top"]
+            )
+            if usable_height > 0 and _is_number(share):
+                expected_share = round(box["height"] / usable_height, 4)
+                if share != expected_share:
+                    errors.append(
+                        f"{field}.layout.illustration_share must match the "
+                        "illustration box"
+                    )
 
         image_generation_count = page.get("image_generation_count")
         max_image_generations = page.get("max_image_generations")

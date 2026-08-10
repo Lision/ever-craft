@@ -10,6 +10,7 @@ from PIL import Image
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SKILL_DIR / "scripts"))
+from layout_engine import layout_fingerprint
 from validate_manifest import validate_project
 
 
@@ -53,6 +54,19 @@ class ManifestValidationTests(unittest.TestCase):
 
     def assert_error_contains(self, text):
         self.assertTrue(any(text in error for error in validate_project(self.project)))
+
+    def refresh_layout_fingerprints(self):
+        manifest_path = self.project / "manifest.yaml"
+        visual_bible = yaml.safe_load(
+            (self.project / "visual-bible.yaml").read_text(encoding="utf-8")
+        )
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        for page in manifest["pages"]:
+            page["layout"]["fingerprint"] = layout_fingerprint(page, visual_bible)
+        manifest_path.write_text(
+            yaml.safe_dump(manifest, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
 
     def test_valid_project_has_no_errors(self):
         self.assertEqual(validate_project(self.project), [])
@@ -113,6 +127,67 @@ class ManifestValidationTests(unittest.TestCase):
                     "visual-bible.yaml",
                     lambda data, token=token, expected=expected: data["palette"].update(
                         {token: expected}
+                    ),
+                )
+
+    def test_requires_current_calculated_layout(self):
+        self.mutate(
+            "manifest.yaml",
+            lambda data: data["pages"][0].pop("layout"),
+        )
+        self.assert_error_contains("pages[0].layout: expected a mapping")
+
+    def test_copy_change_makes_layout_fingerprint_stale(self):
+        self.mutate(
+            "manifest.yaml",
+            lambda data: data["pages"][0].update(body="修改后的正文"),
+        )
+        self.assert_error_contains(
+            "pages[0].layout.fingerprint is stale; recalculate the layout"
+        )
+
+    def test_rejects_illustration_share_below_half(self):
+        self.mutate(
+            "manifest.yaml",
+            lambda data: data["pages"][0]["layout"].update(
+                illustration_box={
+                    "x": 80,
+                    "y": 900,
+                    "width": 920,
+                    "height": 398,
+                },
+                illustration_share=0.4,
+            ),
+        )
+        self.assert_error_contains(
+            "pages[0].layout.illustration_share must be at least 0.5"
+        )
+
+    def test_layout_contract_is_fixed(self):
+        expected = {
+            "margin_x": 80,
+            "margin_top": 72,
+            "margin_bottom": 72,
+            "block_gap": 24,
+            "copy_to_divider_gap": 24,
+            "divider_to_illustration_gap": 20,
+            "illustration_to_footer_gap": 40,
+            "min_illustration_share": 0.5,
+        }
+        for key, value in expected.items():
+            with self.subTest(key=key):
+                invalid = True if isinstance(value, int) else 0.49
+                self.mutate(
+                    "visual-bible.yaml",
+                    lambda data, key=key, invalid=invalid: data["layout"].update(
+                        {key: invalid}
+                    ),
+                )
+                self.assert_error_contains(f"layout.{key} must be exactly {value}")
+                self.mutate(
+                    "visual-bible.yaml",
+                    lambda data, key=key, value=value: data["layout"].update(
+                        {key: value}
                     ),
                 )
 
@@ -211,6 +286,7 @@ class ManifestValidationTests(unittest.TestCase):
                     "manifest.yaml",
                     lambda data, field=field: put_sentence_in_field(data, field),
                 )
+                self.refresh_layout_fingerprints()
                 self.assertEqual(validate_project(self.project), [])
 
     def test_must_keep_validation_does_not_modify_manifest(self):

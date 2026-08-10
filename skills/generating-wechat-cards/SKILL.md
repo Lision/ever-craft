@@ -7,7 +7,7 @@ description: Use when turning Chinese articles or outlines into image-first WeCh
 
 ## Core principle
 
-Approve the information architecture, generate original illustration layers, compose Chinese text deterministically, and accept output only after independent review.
+Approve copy and layout, reserve at least half of each usable card for illustration, generate original text-free illustration layers for the calculated regions, compose Chinese text deterministically, and accept output only after independent review.
 
 Keep every post in a user-selected Git project at `<git-project>/<post-slug>/`; never store a post project inside this skill. Treat `manifest.yaml` as the single source of truth for state, copy, prompts, paths, dependencies, invalidations, and counters. Keep the machine-readable visual contract in `visual-bible.yaml`.
 
@@ -33,9 +33,9 @@ draft → script_pending → script_approved → anchor_pending → anchor_appro
 | State | Permitted action and exit condition |
 | --- | --- |
 | `draft` | Save `source.md`; extract the thesis, sections, and user overrides. Move to `script_pending`. |
-| `script_pending` | Draft one central claim per page in `manifest.yaml`; present Gate 1. Stay here while editing. |
-| `script_approved` | Enter only after explicit user approval of thesis, page order, copy, page types, and metaphors. Create `visual-bible.yaml`; move to `anchor_pending`. |
-| `anchor_pending` | Generate `style-anchor.png` and optional `character-sheet.png`; present Gate 2. Stay here while revising anchors. |
+| `script_pending` | Draft one central claim, copy, and preliminary layout per page in `manifest.yaml`; present Gate 1. Stay here while editing. |
+| `script_approved` | Enter only after explicit user approval of thesis, page order, copy, page types, preliminary layouts, and metaphors. Create `visual-bible.yaml` and calculate every page layout. If every illustration share is at least 50%, move to `anchor_pending`; otherwise invalidate the Gate 1 approval, return to `script_pending`, revise copy, and repeat Gate 1. |
+| `anchor_pending` | Generate `style-anchor.png` and optional `character-sheet.png` from the approved copy and calculated illustration boxes; present Gate 2. Stay here while revising anchors. |
 | `anchor_approved` | Enter only after explicit user approval of the required anchors. Prepare validated page dispatches; move to `generating`. |
 | `generating` | Generate only assigned text-free illustration layers, update paths and counters, then render. Move to `reviewing`. |
 | `reviewing` | Dispatch an independent reviewer and save a new immutable `reviews/round-NN.yaml`. Move to `passed`, `revising`, or `limit_reached`. |
@@ -49,20 +49,27 @@ Explicit approval means a clear user decision at that gate; silence, prior prefe
 
 1. Save the original article or outline, user overrides, and reference links in `source.md`.
 2. Create one cover and normally three to eight section cards; add a summary only when it advances the conclusion. Use `cover`, `standard`, `comparison`, `list`, or `summary` page types.
-3. Give every page one central claim. Split dense content instead of shrinking type. Preserve user-designated sentences.
+3. Give every page one central claim. Draft its copy and preliminary layout from the original input. Split dense content instead of shrinking type. Preserve user-designated sentences.
 4. Define the title, kicker, non-empty subtitle, body, emphasis list, `must_keep` and `compressible` metadata, visual metaphor, text-free illustration prompt, dependencies, canonical output paths, and retry counters in `manifest.yaml`. Every `must_keep` item must be a verbatim substring of one displayed copy field; `compressible` is non-displayed editing metadata.
-5. Present Gate 1 with the thesis, page count and order, each page's claim and copy, page type, and metaphor. Record approval before creating anchors.
-6. Create the exact visual contract and anchors. Omit `character-sheet.png` when characters are disabled. Present Gate 2 before batch generation.
+5. Present Gate 1 with the thesis, page count and order, each page's claim and copy, page type, preliminary layout, and metaphor. Record explicit approval before calculating final geometry.
+6. Create `visual-bible.yaml`, then calculate and atomically record every page's actual text flow, divider, illustration box, and illustration share:
+
+```bash
+python3 <skill-dir>/scripts/calculate_layout.py --write <post-dir>
+```
+
+7. Treat the usable content area as the full-width safe column between the top margin and the illustration/footer boundary. Flow approved copy downward at fixed type scales, reserve the footer and all configured gaps, and assign the remaining space to the illustration. Require every illustration box to occupy at least 50% of that usable area. If any page fails, do not create anchors: invalidate the Gate 1 approval, return to `script_pending`, shorten or split the copy, present Gate 1 again, and rerun the calculation.
+8. Generate the exact visual anchors from the approved copy plus all calculated illustration boxes. Use the most constrained box to prove the style still works. Omit `character-sheet.png` when characters are disabled. Present Gate 2 before batch generation.
 
 ## Validate and render
 
-Require a zero exit code from pre-generation validation before every image-generation phase:
+Require a current calculated layout for every page and a zero exit code from pre-generation validation before every image-generation phase:
 
 ```bash
 python3 <skill-dir>/scripts/validate_manifest.py --phase pre-generation <post-dir>
 ```
 
-This phase validates both approval records and timestamps, required anchors, phase states, retry limits, consecutive unresolved issues, canonical non-symlinked output paths, containment, source, and visual-bible files. With no target it permits missing illustrations for every page. For a local revision, repeat `--page-id`; only those target illustrations may be missing and every non-target illustration must exist:
+This phase validates both approval records and timestamps, current layout fingerprints, the 50% illustration minimum, required anchors, phase states, retry limits, consecutive unresolved issues, canonical non-symlinked output paths, containment, source, and visual-bible files. With no target it permits missing illustrations for every page. For a local revision, repeat `--page-id`; only those target illustrations may be missing and every non-target illustration must exist:
 
 ```bash
 python3 <skill-dir>/scripts/validate_manifest.py --phase pre-generation \
@@ -79,7 +86,7 @@ python3 <skill-dir>/scripts/render_cards.py <post-dir>
 python3 <skill-dir>/scripts/render_cards.py <post-dir> <page-id>
 ```
 
-Do not generate Chinese layout text inside illustrations. Let the renderer add kicker, title, subtitle, body, emphasis, page numbers, and signature with `Maple Mono NF CN`; `must_keep` and `compressible` remain metadata. Do not silently substitute another font, shrink copy, or bypass glyph/overflow errors. The eight palette values are fixed per skill and cannot be overridden by a post or by Gate 2.
+Do not generate Chinese layout text inside illustrations. Let the renderer reproduce the calculated text flow and place each illustration inside its recorded box, preserving aspect ratio. Let it add kicker, title, subtitle, body, emphasis, page numbers, and signature with `Maple Mono NF CN`; `must_keep` and `compressible` remain metadata. Do not silently substitute another font, shrink copy, use a stale layout, or bypass glyph/space errors. The eight palette values are fixed per skill and cannot be overridden by a post or by Gate 2.
 
 ## Dispatch illustration generation
 
@@ -87,11 +94,13 @@ Dispatch a generation sub-agent with this contract for each assigned page:
 
 ```text
 Role: illustration generator; do not review or approve your own work.
-Inputs: page ID and approved brief from manifest.yaml; visual-bible.yaml;
-style-anchor.png; character-sheet.png only when enabled; declared output path.
+Inputs: page ID, approved copy and brief, calculated illustration box dimensions and
+aspect ratio from manifest.yaml; visual-bible.yaml; style-anchor.png;
+character-sheet.png only when enabled; declared output path.
 For a revision also include the current illustration and only the routed review actions.
-Task: create one original, text-free illustration layer that expresses the approved
-metaphor and follows the supplied anchors. Change only assigned image concerns.
+Task: create one original, text-free illustration layer composed for the exact
+illustration box, expressing the approved metaphor and following the supplied anchors.
+Change only assigned image concerns.
 Output: write the image to the declared versioned path; report that path and no verdict.
 Constraints: do not alter source.md, manifest copy, review files, cards, or counters;
 do not copy a reference mascot, signature, composition, or individual illustration.
@@ -125,7 +134,7 @@ Resolve cross-page and `system` issues before page-local issues. Within a page, 
 
 | Owner | Revision action |
 | --- | --- |
-| `content` | Main agent revises manifest copy first, then invalidates dependent images/cards. |
+| `content` | Main agent revises manifest copy first, returns to Gate 1, recalculates layout, then invalidates every dependent anchor/image/card whose input changed. |
 | `image` | Generation sub-agent receives the original brief, current image, anchors, and routed action; render the replacement afterward. |
 | `layout` | Preserve the illustration and rerender only. Layout-only rerenders consume no image-generation count. |
 | `system` | Main agent updates `visual-bible.yaml`, invalidates every affected page, and returns to Gate 2 when the visual system changes. |
@@ -140,7 +149,7 @@ Output: changed paths plus an issue-by-issue handoff for a fresh independent rev
 Never close an issue yourself or broaden the change beyond its routed action.
 ```
 
-Propagate content changes: wording-only changes invalidate layout; changed visual objects or relationships invalidate illustration and layout; a changed thesis returns to Gate 1 and invalidates the cover plus related pages; a changed visual system returns to Gate 2 and invalidates all affected pages.
+Propagate content changes: every wording change invalidates the stored layout fingerprint and returns to Gate 1. Recalculate before any generation. If the illustration box or anchor input changes, return to Gate 2 and invalidate the affected anchor/image/card; changed visual objects or relationships invalidate illustration and layout; a changed thesis invalidates the cover plus related pages; a changed visual system returns to Gate 2 and invalidates all affected pages.
 
 ## Enforce review and stopping limits
 
@@ -157,6 +166,8 @@ Propagate content changes: wording-only changes invalidate layout; changed visua
 | --- | --- |
 | Treating scattered notes as project state | Put state, copy, prompts, paths, dependencies, invalidations, and counters in `manifest.yaml` only. |
 | Keeping the visual rules in prose | Maintain exact machine-readable tokens and exclusions in `visual-bible.yaml`. |
+| Generating art against a guessed region | Run `calculate_layout.py --write`, require at least 50%, and pass the recorded box to anchors and page generation. |
+| Letting copy consume the illustration | Return to Gate 1 and shorten or split the page; never shrink type or lower the 50% threshold. |
 | Using `area` or multiple owners | Give each atomic issue exactly one `owner`: `content`, `image`, `layout`, or `system`. |
 | Omitting correction order | Add `depends_on` whenever one action changes another action's input. |
 | Stopping without a usable handoff | Retain the best card version and state its unresolved limitation. |

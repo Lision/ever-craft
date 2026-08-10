@@ -16,7 +16,11 @@ layout:
   margin_x: 80
   margin_top: 72
   margin_bottom: 72
-  illustration_height: 520
+  block_gap: 24
+  copy_to_divider_gap: 24
+  divider_to_illustration_gap: 20
+  illustration_to_footer_gap: 40
+  min_illustration_share: 0.5
 illustration:
   character_enabled: true
   prohibited: [photorealism, 3d rendering, copied reference mascot]
