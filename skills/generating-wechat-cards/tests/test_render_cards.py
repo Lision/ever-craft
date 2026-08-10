@@ -12,6 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SKILL_DIR / "scripts"))
+from calculate_layout import calculate_layouts
 from render_cards import (
     LayoutOverflowError,
     assert_glyph_coverage,
@@ -73,6 +74,22 @@ class CardRendererTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def recalculate_layouts(self):
+        manifest = yaml.safe_load(
+            (self.project / "manifest.yaml").read_text(encoding="utf-8")
+        )
+        visual_bible = yaml.safe_load(
+            (self.project / "visual-bible.yaml").read_text(encoding="utf-8")
+        )
+        layouts = calculate_layouts(manifest, visual_bible)
+        for page, layout in zip(manifest["pages"], layouts, strict=True):
+            page["layout"] = layout
+        (self.project / "manifest.yaml").write_text(
+            yaml.safe_dump(manifest, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+        return layouts
+
     def test_render_card_has_fixed_dimensions_and_exact_colors(self):
         card = render_card(self.project, "p01")
 
@@ -90,7 +107,7 @@ class CardRendererTests(unittest.TestCase):
 
         with Image.open(card) as image:
             self.assertEqual(image.getpixel((140, 700)), (250, 250, 248))
-            self.assertEqual(image.getpixel((540, 960)), (1, 47, 167))
+            self.assertEqual(image.getpixel((540, 961)), (1, 47, 167))
 
     def test_subtitle_and_emphasis_each_change_rendered_pixels(self):
         card = render_card(self.project, "p01")
@@ -100,6 +117,7 @@ class CardRendererTests(unittest.TestCase):
             "manifest.yaml",
             lambda data: data["pages"][0].update(subtitle="完全不同的副标题"),
         )
+        self.recalculate_layouts()
         render_card(self.project, "p01")
         subtitle_output = card.read_bytes()
         self.assertNotEqual(subtitle_output, baseline)
@@ -108,6 +126,7 @@ class CardRendererTests(unittest.TestCase):
             "manifest.yaml",
             lambda data: data["pages"][0].update(emphasis=["全新强调"]),
         )
+        self.recalculate_layouts()
         render_card(self.project, "p01")
         self.assertNotEqual(card.read_bytes(), subtitle_output)
 
@@ -123,8 +142,8 @@ class CardRendererTests(unittest.TestCase):
                         {field: value}
                     ),
                 )
-                with self.assertRaisesRegex(ValueError, "uncovered glyph"):
-                    render_card(self.project, "p01")
+                with self.assertRaisesRegex(LayoutOverflowError, "uncovered glyph"):
+                    self.recalculate_layouts()
                 self.mutate(
                     "manifest.yaml",
                     lambda data, field=field: data["pages"][0].update(
@@ -142,7 +161,7 @@ class CardRendererTests(unittest.TestCase):
 
         self.assertTrue(output.is_file())
 
-    def test_subtitle_and_emphasis_overflow_fixed_regions(self):
+    def test_subtitle_and_emphasis_cannot_reduce_illustration_below_half(self):
         for field, value in (
             ("subtitle", "过" * 1000),
             ("emphasis", ["过" * 1000]),
@@ -154,8 +173,10 @@ class CardRendererTests(unittest.TestCase):
                         {field: value}
                     ),
                 )
-                with self.assertRaises(LayoutOverflowError):
-                    render_card(self.project, "p01")
+                with self.assertRaisesRegex(
+                    LayoutOverflowError, "below the required 50%"
+                ):
+                    self.recalculate_layouts()
                 self.mutate(
                     "manifest.yaml",
                     lambda data, field=field: data["pages"][0].update(
@@ -208,14 +229,14 @@ class CardRendererTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), content)
         self.assertEqual(list((self.project / "cards").glob(".*.tmp")), [])
 
-    def test_render_all_later_overflow_preserves_entire_existing_set(self):
+    def test_render_all_stale_layout_preserves_entire_existing_set(self):
         sentinels = self._write_card_sentinels()
         self.mutate(
             "manifest.yaml",
             lambda data: data["pages"][1].update(body="过" * 2000),
         )
 
-        with self.assertRaises(LayoutOverflowError):
+        with self.assertRaisesRegex(ValueError, "layout.fingerprint is stale"):
             render_all(self.project)
 
         self._assert_sentinels_and_no_temps(sentinels)
@@ -376,6 +397,51 @@ class CardRendererTests(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr)
         self.assertEqual(result.stdout, "")
 
+    def test_calculate_layout_cli_writes_current_geometry(self):
+        self.mutate(
+            "manifest.yaml",
+            lambda data: data["pages"][0].update(body="清单记录动作，精简正文。"),
+        )
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SKILL_DIR / "scripts" / "calculate_layout.py"),
+                "--write",
+                str(self.project),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("illustration share", result.stdout)
+        output = render_card(self.project, "p01")
+        self.assertTrue(output.is_file())
+
+    def test_calculate_layout_cli_failure_keeps_manifest_unchanged(self):
+        self.mutate(
+            "manifest.yaml",
+            lambda data: data["pages"][0].update(body="过" * 2000),
+        )
+        manifest = self.project / "manifest.yaml"
+        before = manifest.read_bytes()
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SKILL_DIR / "scripts" / "calculate_layout.py"),
+                "--write",
+                str(self.project),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("below the required 50%", result.stderr)
+        self.assertEqual(manifest.read_bytes(), before)
+
     def test_missing_explicit_font_reports_required_family(self):
         visual_bible = {
             "typography": {
@@ -433,21 +499,27 @@ class CardRendererTests(unittest.TestCase):
 
         self.assertEqual(wrap_text(draw, "甲乙\n丙丁", font, 400), ["甲乙", "丙丁"])
 
-    def test_crowded_body_raises_layout_overflow(self):
+    def test_crowded_body_returns_to_gate_one(self):
         project = self.project
         self.mutate(
             "manifest.yaml",
             lambda data: data["pages"][1].update(body="过" * 2000),
         )
 
-        self.assertRaises(LayoutOverflowError, render_card, project, "p02")
+        with self.assertRaisesRegex(
+            LayoutOverflowError, "return to Gate 1"
+        ):
+            self.recalculate_layouts()
 
-    def test_layout_fields_require_non_boolean_integers(self):
+    def test_fixed_layout_contract_cannot_be_overridden(self):
         for field in (
             "margin_x",
             "margin_top",
             "margin_bottom",
-            "illustration_height",
+            "block_gap",
+            "copy_to_divider_gap",
+            "divider_to_illustration_gap",
+            "illustration_to_footer_gap",
         ):
             with self.subTest(field=field):
                 self.mutate(
@@ -455,7 +527,7 @@ class CardRendererTests(unittest.TestCase):
                     lambda data, field=field: data["layout"].update({field: True}),
                 )
 
-                with self.assertRaises(LayoutOverflowError) as layout_exception:
+                with self.assertRaises(ValueError) as layout_exception:
                     render_card(self.project, "p01")
 
                 self.assertIn(f"layout.{field}", str(layout_exception.exception))
@@ -467,72 +539,13 @@ class CardRendererTests(unittest.TestCase):
                                 "margin_x": 80,
                                 "margin_top": 72,
                                 "margin_bottom": 72,
-                                "illustration_height": 520,
+                                "block_gap": 24,
+                                "copy_to_divider_gap": 24,
+                                "divider_to_illustration_gap": 20,
+                                "illustration_to_footer_gap": 40,
                             }[field]
                         }
                     ),
-                )
-
-    def test_margin_x_requires_nonnegative_positive_content_width(self):
-        for value in (-1, 540):
-            with self.subTest(value=value):
-                self.mutate(
-                    "visual-bible.yaml",
-                    lambda data, value=value: data["layout"].update(margin_x=value),
-                )
-
-                with self.assertRaises(LayoutOverflowError) as layout_exception:
-                    render_card(self.project, "p01")
-
-                self.assertIn("layout.margin_x", str(layout_exception.exception))
-                self.mutate(
-                    "visual-bible.yaml",
-                    lambda data: data["layout"].update(margin_x=80),
-                )
-
-    def test_vertical_margins_keep_text_and_footer_inside_canvas(self):
-        for field, value, default in (
-            ("margin_top", 2000, 72),
-            ("margin_bottom", -1000, 72),
-        ):
-            with self.subTest(field=field, value=value):
-                self.mutate(
-                    "visual-bible.yaml",
-                    lambda data, field=field, value=value: data["layout"].update(
-                        {field: value}
-                    ),
-                )
-
-                with self.assertRaises(LayoutOverflowError) as layout_exception:
-                    render_card(self.project, "p01")
-
-                self.assertIn(f"layout.{field}", str(layout_exception.exception))
-                self.mutate(
-                    "visual-bible.yaml",
-                    lambda data, field=field, default=default: data["layout"].update(
-                        {field: default}
-                    ),
-                )
-
-    def test_illustration_region_stays_inside_canvas_without_footer_overlap(self):
-        for value in (1000, 700):
-            with self.subTest(value=value):
-                self.mutate(
-                    "visual-bible.yaml",
-                    lambda data, value=value: data["layout"].update(
-                        illustration_height=value
-                    ),
-                )
-
-                with self.assertRaises(LayoutOverflowError) as layout_exception:
-                    render_card(self.project, "p01")
-
-                self.assertIn(
-                    "layout.illustration_height", str(layout_exception.exception)
-                )
-                self.mutate(
-                    "visual-bible.yaml",
-                    lambda data: data["layout"].update(illustration_height=520),
                 )
 
     def test_footer_signature_outside_content_width_raises_layout_overflow(self):
@@ -541,7 +554,7 @@ class CardRendererTests(unittest.TestCase):
             lambda data: data.update(footer={"signature": "S" * 100}),
         )
 
-        self.assertRaises(LayoutOverflowError, render_card, self.project, "p01")
+        self.assertRaises(LayoutOverflowError, self.recalculate_layouts)
 
     def test_footer_signature_collision_raises_layout_overflow(self):
         self.mutate(
@@ -549,24 +562,7 @@ class CardRendererTests(unittest.TestCase):
             lambda data: data.update(footer={"signature": "S" * 65}),
         )
 
-        self.assertRaises(LayoutOverflowError, render_card, self.project, "p01")
-
-    def test_page_number_must_fit_without_signature(self):
-        self.mutate(
-            "manifest.yaml",
-            lambda data: data["pages"][0].update(
-                title="I", kicker="I", body="I", must_keep=[]
-            ),
-        )
-        self.mutate(
-            "visual-bible.yaml",
-            lambda data: data["layout"].update(margin_x=500),
-        )
-
-        with self.assertRaises(LayoutOverflowError) as page_number_exception:
-            render_card(self.project, "p01")
-
-        self.assertIn("page number", str(page_number_exception.exception))
+        self.assertRaises(LayoutOverflowError, self.recalculate_layouts)
 
     def test_footer_signature_requires_string(self):
         self.mutate(
@@ -574,8 +570,8 @@ class CardRendererTests(unittest.TestCase):
             lambda data: data.update(footer={"signature": 42}),
         )
 
-        with self.assertRaises(ValueError) as signature_exception:
-            render_card(self.project, "p01")
+        with self.assertRaises(LayoutOverflowError) as signature_exception:
+            self.recalculate_layouts()
 
         self.assertIn("footer.signature", str(signature_exception.exception))
 

@@ -4,7 +4,7 @@ Read this reference before creating or changing project files, writing a review,
 
 ## Project invariants
 
-Use `manifest.yaml` as the single source of truth for current state, approved copy, prompts, artifact paths, dependencies, invalidations, counters, and user delivery decisions. Do not create a second storyboard, task-state file, or delivery manifest.
+Use `manifest.yaml` as the single source of truth for current state, approved copy, calculated page geometry, prompts, artifact paths, dependencies, invalidations, counters, and user delivery decisions. Do not create a second storyboard, task-state file, or delivery manifest.
 
 Keep each `reviews/round-NN.yaml` immutable after writing it. Corrections belong in a new round file. Write `reviews/final.yaml` once as an immutable snapshot derived from the manifest after Gate 3; never use it as mutable workflow state. Use the exact role paths shown below: `source.md`, `visual-bible.yaml`, `cards/<page-id>.png`, and versioned `illustrations/<page-id>-vNN.png`. Use lowercase `.png`, unique page/card/illustration paths, and real output directories; never use a symlink as an output or output parent.
 
@@ -74,6 +74,13 @@ pages:
     illustration_prompt: >-
       Original minimal editorial line art of an abstract character pulling a task
       list while detached context cards fall behind; no text, logo, or watermark.
+    layout:
+      version: 1
+      fingerprint: "<calculated SHA-256>"
+      copy_bottom: 581
+      divider_y: 605
+      illustration_box: {x: 80, y: 625, width: 920, height: 673}
+      illustration_share: 0.5489
     depends_on: []
     image_generation_count: 1
     max_image_generations: 3
@@ -99,6 +106,13 @@ pages:
     illustration_prompt: >-
       Original minimal editorial line art of three distinct containers connected
       in sequence; no text, logo, or watermark.
+    layout:
+      version: 1
+      fingerprint: "<calculated SHA-256>"
+      copy_bottom: 483
+      divider_y: 507
+      illustration_box: {x: 80, y: 527, width: 920, height: 771}
+      illustration_share: 0.6289
     depends_on:
       - p01
     image_generation_count: 1
@@ -108,9 +122,9 @@ pages:
     invalidated_by: []
 ```
 
-Required validator-facing values are `post.slug`, `post.thesis`, `post.status`, both post counters, exact `source` and `visual_bible` paths, both Gate 1/Gate 2 approval records with non-empty `approved_at`, the required anchor paths, and a non-empty `pages` list. Every page requires `id`, a type from `cover|standard|comparison|list|summary`, `title`, `kicker`, non-empty `subtitle`, `body`, non-empty-string lists `emphasis`, `must_keep`, and `compressible` (each list may be empty), `visual_metaphor`, `illustration_prompt`, both page counters, canonical `illustration` and `card`, and `status`.
+Required validator-facing values are `post.slug`, `post.thesis`, `post.status`, both post counters, exact `source` and `visual_bible` paths, both Gate 1/Gate 2 approval records with non-empty `approved_at`, the required anchor paths, and a non-empty `pages` list. Every page requires `id`, a type from `cover|standard|comparison|list|summary`, `title`, `kicker`, non-empty `subtitle`, `body`, non-empty-string lists `emphasis`, `must_keep`, and `compressible` (each list may be empty), `visual_metaphor`, `illustration_prompt`, a current calculated `layout`, both page counters, canonical `illustration` and `card`, and `status`.
 
-Every `must_keep` item must appear verbatim within one displayed `title`, `kicker`, `subtitle`, `body`, or `emphasis` value. The renderer draws those displayed fields; `compressible` is non-displayed editing metadata, and neither metadata list is drawn or glyph-checked separately. All displayed copy uses the bundled fixed font sizes and regions; glyph or overflow failures require copy/layout revision, never automatic shrinking.
+Every `must_keep` item must appear verbatim within one displayed `title`, `kicker`, `subtitle`, `body`, or `emphasis` value. The renderer draws those displayed fields; `compressible` is non-displayed editing metadata, and neither metadata list is drawn or glyph-checked separately. All displayed copy uses the bundled fixed font sizes and measured flow. Run `scripts/calculate_layout.py --write <post-dir>` to create the layout object; never invent its fingerprint or geometry. Require `illustration_share >= 0.5`. Glyph or space failures require returning to Gate 1 for copy/layout revision, never automatic shrinking.
 
 Use only these post workflow states: `draft`, `script_pending`, `script_approved`, `anchor_pending`, `anchor_approved`, `generating`, `reviewing`, `revising`, `passed`, or `limit_reached`. Record every invalidation with affected page, invalidated artifacts, reason, originating issue, and timestamp.
 
@@ -137,8 +151,11 @@ layout:
   margin_x: 80
   margin_top: 72
   margin_bottom: 72
-  illustration_height: 520
-  layouts: [cover, standard, comparison-list, summary]
+  block_gap: 24
+  copy_to_divider_gap: 24
+  divider_to_illustration_gap: 20
+  illustration_to_footer_gap: 40
+  min_illustration_share: 0.5
 line_art:
   quality: irregular-hand-drawn
   complexity: sparse

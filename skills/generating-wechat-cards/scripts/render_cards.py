@@ -4,231 +4,24 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import os
 import shutil
 import sys
 import uuid
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-from fontTools.ttLib import TTFont
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
-from validate_manifest import REQUIRED_FONT_FAMILY, load_yaml, validate_project
-
-
-SKILL_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_THEME_PATH = SKILL_DIR / "assets" / "default-theme.yaml"
-FONT_CANDIDATES = {
-    "regular": [Path.home() / "Library/Fonts/MapleMono-NF-CN-Regular.ttf"],
-    "bold": [Path.home() / "Library/Fonts/MapleMono-NF-CN-Bold.ttf"],
-}
-FOOTER_GAP = 40
-MIN_VERTICAL_GAP = 24
-
-
-class LayoutOverflowError(RuntimeError):
-    """Raised when fixed theme typography cannot contain the supplied content."""
-
-
-def _assert_font_metadata(font_path: Path, weight: str) -> None:
-    with TTFont(font_path, lazy=True) as font:
-        name_table = font["name"]
-        family_names = {
-            record.toUnicode()
-            for record in name_table.names
-            if record.nameID in (1, 16)
-        }
-        style_names = {
-            record.toUnicode()
-            for record in name_table.names
-            if record.nameID in (2, 17)
-        }
-        os2 = font["OS/2"]
-        weight_class = os2.usWeightClass
-        is_italic = bool(os2.fsSelection & 0b1)
-    if REQUIRED_FONT_FAMILY not in family_names:
-        raise ValueError(f"{font_path}: expected {REQUIRED_FONT_FAMILY} font metadata")
-    expected_style = weight.capitalize()
-    expected_weight_class = {"regular": 400, "bold": 700}[weight]
-    if (
-        expected_style not in style_names
-        or weight_class != expected_weight_class
-        or is_italic
-    ):
-        raise ValueError(
-            f"{font_path}: expected {REQUIRED_FONT_FAMILY} {weight} font metadata"
-        )
-
-
-def find_font_paths(visual_bible: dict[str, Any]) -> tuple[Path, Path]:
-    """Honor explicit paths first, then known candidates; raise if absent."""
-    typography = visual_bible.get("typography", {})
-    if not isinstance(typography, dict) or typography.get("family") != REQUIRED_FONT_FAMILY:
-        raise FileNotFoundError(f"required font family is {REQUIRED_FONT_FAMILY}")
-
-    found: dict[str, Path] = {}
-    for weight in ("regular", "bold"):
-        explicit = typography.get(f"{weight}_path")
-        if explicit is not None:
-            path = Path(explicit).expanduser()
-            if not path.is_file():
-                raise FileNotFoundError(
-                    f"{REQUIRED_FONT_FAMILY} {weight} font not found: {path}"
-                )
-            _assert_font_metadata(path, weight)
-            found[weight] = path
-            continue
-
-        candidate = next(
-            (candidate for candidate in FONT_CANDIDATES[weight] if candidate.is_file()),
-            None,
-        )
-        if candidate is None:
-            candidates = ", ".join(str(path) for path in FONT_CANDIDATES[weight])
-            raise FileNotFoundError(
-                f"{REQUIRED_FONT_FAMILY} {weight} font not found; checked: {candidates}"
-            )
-        _assert_font_metadata(candidate, weight)
-        found[weight] = candidate
-
-    return found["regular"], found["bold"]
-
-
-def assert_glyph_coverage(font_path: Path, text: str) -> None:
-    """Raise with uncovered non-whitespace characters; never substitute fonts."""
-    with TTFont(font_path, lazy=True) as font:
-        covered = set(cast(dict[int, str], font.getBestCmap() or {}))
-    missing = sorted(
-        {
-            character
-            for character in text
-            if not character.isspace() and ord(character) not in covered
-        }
-    )
-    if missing:
-        labels = ", ".join(f"U+{ord(character):04X}" for character in missing)
-        raise ValueError(f"{font_path}: uncovered glyph(s): {labels}")
-
-
-def wrap_text(draw, text, font, max_width):
-    """Wrap one Unicode character at a time and preserve explicit newlines."""
-    lines: list[str] = []
-    for paragraph in text.split("\n"):
-        if not paragraph:
-            lines.append("")
-            continue
-        line = ""
-        for character in paragraph:
-            candidate = line + character
-            if line and draw.textlength(candidate, font=font) > max_width:
-                lines.append(line)
-                line = character
-            else:
-                line = candidate
-        lines.append(line)
-    return lines
-
-
-def draw_text_block(draw, text, xy, font, fill, max_width, max_height, spacing):
-    """Draw wrapped text or raise LayoutOverflowError."""
-    lines = wrap_text(draw, text, font, max_width)
-    ascent, descent = font.getmetrics()
-    line_height = ascent + descent
-    height = line_height * len(lines) + spacing * max(0, len(lines) - 1)
-    too_wide = any(draw.textlength(line, font=font) > max_width for line in lines)
-    if too_wide or height > max_height:
-        raise LayoutOverflowError(
-            f"text does not fit {max_width}x{max_height} layout region: {text!r}"
-        )
-
-    x, y = xy
-    for line in lines:
-        draw.text((x, y), line, font=font, fill=fill, anchor="lt")
-        y += line_height + spacing
-    return y - spacing
-
-
-def _merged_theme(visual_bible: dict[str, Any]) -> dict[str, Any]:
-    theme = load_yaml(DEFAULT_THEME_PATH)
-    for section in ("layout", "illustration"):
-        overrides = visual_bible.get(section)
-        if not isinstance(overrides, dict):
-            continue
-        for key in theme[section]:
-            if key in overrides:
-                theme[section][key] = copy.deepcopy(overrides[key])
-
-    footer = visual_bible.get("footer")
-    if isinstance(footer, dict) and "signature" in footer:
-        theme["footer"]["signature"] = copy.deepcopy(footer["signature"])
-    return theme
-
-
-def _preflight_effective_layout(
-    theme: dict[str, Any], footer_font: ImageFont.FreeTypeFont, page_number: str
-) -> dict[str, int]:
-    layout = theme["layout"]
-    regions = theme["regions"]
-    signature = theme["footer"]["signature"]
-    if not isinstance(signature, str):
-        raise ValueError("footer.signature must be a string")
-    for field in ("margin_x", "margin_top", "margin_bottom", "illustration_height"):
-        value = layout[field]
-        if not isinstance(value, int) or isinstance(value, bool):
-            raise LayoutOverflowError(f"layout.{field} must be an integer")
-    margin_x = layout["margin_x"]
-    content_width = theme["canvas"]["width"] - 2 * margin_x
-    if margin_x < 0 or content_width <= 0:
-        raise LayoutOverflowError(
-            "layout.margin_x must be nonnegative and leave positive content width"
-        )
-    margin_top = layout["margin_top"]
-    if (
-        margin_top < 0
-        or margin_top + regions["kicker"]["height"] + MIN_VERTICAL_GAP
-        > regions["title"]["top"]
-    ):
-        raise LayoutOverflowError(
-            "layout.margin_top places the kicker outside or into the title region"
-        )
-    margin_bottom = layout["margin_bottom"]
-    footer_height = sum(footer_font.getmetrics())
-    footer_top = theme["canvas"]["height"] - margin_bottom - footer_height
-    footer_bottom = footer_top + footer_height
-    if (
-        margin_bottom < 0
-        or footer_top < 0
-        or footer_bottom > theme["canvas"]["height"]
-    ):
-        raise LayoutOverflowError(
-            "layout.margin_bottom places the footer outside the canvas"
-        )
-    illustration_height = layout["illustration_height"]
-    illustration_bottom = regions["illustration_top"] + illustration_height
-    if (
-        illustration_height <= 0
-        or illustration_bottom > theme["canvas"]["height"]
-        or illustration_bottom + MIN_VERTICAL_GAP > footer_top
-    ):
-        raise LayoutOverflowError(
-            "layout.illustration_height places the illustration outside the canvas "
-            "or into the footer region"
-        )
-    signature_width = footer_font.getlength(signature)
-    if signature_width > content_width:
-        raise LayoutOverflowError("footer signature exceeds the content width")
-    page_number_width = footer_font.getlength(page_number)
-    if theme["footer"]["show_page_number"] and page_number_width > content_width:
-        raise LayoutOverflowError("footer page number exceeds the content width")
-    if (
-        theme["footer"]["show_page_number"]
-        and signature
-        and page_number_width + FOOTER_GAP + signature_width > content_width
-    ):
-        raise LayoutOverflowError("footer page number and signature overlap")
-    return {"content_width": content_width, "footer_top": footer_top}
+from layout_engine import (
+    LayoutOverflowError,
+    assert_glyph_coverage,
+    calculate_page_layout,
+    find_font_paths,
+    merged_theme,
+    wrap_text,
+)
+from validate_manifest import load_yaml, validate_project
 
 
 def _contain_illustration(
@@ -252,7 +45,7 @@ def _validated_project(project_dir: Path) -> tuple[dict[str, Any], dict[str, Any
         raise ValueError("project validation failed:\n" + "\n".join(errors))
     manifest = load_yaml(project_dir / "manifest.yaml")
     visual_bible = load_yaml(project_dir / "visual-bible.yaml")
-    return manifest, visual_bible, _merged_theme(visual_bible)
+    return manifest, visual_bible, merged_theme(visual_bible)
 
 
 def _prepare_card(
@@ -265,116 +58,74 @@ def _prepare_card(
 ) -> tuple[Image.Image, Path]:
     pages = manifest["pages"]
     regular_path, bold_path = find_font_paths(visual_bible)
-    scale = theme["typography_scale"]
-    title_size = (
-        scale["cover_title"]
-        if page["type"] == "cover"
-        else scale["standard_title"]
-    )
-    fonts = {
-        "title": ImageFont.truetype(str(bold_path), title_size),
-        "kicker": ImageFont.truetype(str(regular_path), scale["kicker"]),
-        "subtitle": ImageFont.truetype(str(regular_path), scale["subtitle"]),
-        "body": ImageFont.truetype(str(regular_path), scale["body"]),
-        "emphasis": ImageFont.truetype(str(bold_path), scale["emphasis"]),
-        "footer": ImageFont.truetype(str(regular_path), scale["footer"]),
-    }
 
     footer = f"{page_index + 1:02d} / {len(pages):02d}"
     signature = theme["footer"]["signature"]
-    emphasis = " / ".join(page["emphasis"])
-    geometry = _preflight_effective_layout(theme, fonts["footer"], footer)
-    assert_glyph_coverage(bold_path, page["title"] + emphasis)
-    assert_glyph_coverage(
+    calculated_layout, runtime = calculate_page_layout(
+        page,
+        visual_bible,
+        theme,
         regular_path,
-        "\n".join(
-            (
-                page["kicker"],
-                page["subtitle"],
-                page["body"],
-                footer,
-                signature,
-            )
-        ),
+        bold_path,
+        footer,
     )
+    if page.get("layout") != calculated_layout:
+        raise LayoutOverflowError(
+            f"{page['id']}: stored layout is stale; run calculate_layout.py --write "
+            "before generating or rendering"
+        )
+    fonts = runtime["fonts"]
 
     canvas_config = theme["canvas"]
     palette = theme["palette"]
     layout = theme["layout"]
-    regions = theme["regions"]
     width, height = canvas_config["width"], canvas_config["height"]
     margin_x = layout["margin_x"]
-    content_width = geometry["content_width"]
     canvas = Image.new("RGB", (width, height), palette["background"])
     draw = ImageDraw.Draw(canvas)
 
-    copy_blocks = (
-        (
-            page["kicker"],
-            "kicker",
-            layout["margin_top"],
-            regions["kicker"]["height"],
-            palette["accent"],
-        ),
-        (
-            page["title"],
-            "title",
-            regions["title"]["top"],
-            regions["title"]["height"],
-            palette["ink"],
-        ),
-        (
-            page["subtitle"],
-            "subtitle",
-            regions["subtitle"]["top"],
-            regions["subtitle"]["height"],
-            palette["ink"],
-        ),
-        (
-            page["body"],
-            "body",
-            regions["body"]["top"],
-            regions["body"]["height"],
-            palette["muted"],
-        ),
-        (
-            emphasis,
-            "emphasis",
-            regions["emphasis"]["top"],
-            regions["emphasis"]["height"],
-            palette["annotation"],
-        ),
-    )
-    for text, kind, top, region_height, fill in copy_blocks:
-        draw_text_block(
-            draw,
-            text,
-            (margin_x, top),
-            fonts[kind],
-            fill,
-            content_width,
-            region_height,
-            theme["line_spacing"].get(kind, 0),
-        )
+    fills = {
+        "kicker": palette["accent"],
+        "title": palette["ink"],
+        "subtitle": palette["ink"],
+        "body": palette["muted"],
+        "emphasis": palette["annotation"],
+    }
+    for block in runtime["blocks"]:
+        cursor_y = block["top"]
+        for line in block["lines"]:
+            draw.text(
+                (margin_x, cursor_y),
+                line,
+                font=fonts[block["kind"]],
+                fill=fills[block["kind"]],
+                anchor="lt",
+            )
+            cursor_y += block["line_height"] + block["spacing"]
 
     draw.line(
-        (margin_x, regions["divider_y"], width - margin_x, regions["divider_y"]),
+        (
+            margin_x,
+            calculated_layout["divider_y"],
+            width - margin_x,
+            calculated_layout["divider_y"],
+        ),
         fill=palette["divider"],
         width=2,
     )
-    illustration_top = regions["illustration_top"]
+    box = calculated_layout["illustration_box"]
     _contain_illustration(
         canvas,
         project_dir / page["illustration"],
         (
-            margin_x,
-            illustration_top,
-            width - margin_x,
-            illustration_top + layout["illustration_height"],
+            box["x"],
+            box["y"],
+            box["x"] + box["width"],
+            box["y"] + box["height"],
         ),
     )
 
-    footer_y = geometry["footer_top"]
+    footer_y = runtime["footer_top"]
     if theme["footer"]["show_page_number"]:
         draw.text(
             (margin_x, footer_y),

@@ -30,9 +30,30 @@ Use `Maple Mono NF CN` for every composed text element. Provide regular and bold
 3. **Comparison/list (`comparison` or `list`)** — Use only for genuinely parallel, classified, sequential, or contrasted material. Give peer items equal visual rank; do not force prose into boxes.
 4. **Summary (`summary`)** — Recombine the thesis into a conclusion, action, or interaction prompt. Do not repeat the entire article.
 
-Split a page when its single claim cannot fit at the approved type scale. Keep title, body, illustration, divider, footer, signature, and safe margins inside the deterministic grid.
+Split a page when its single claim cannot leave enough illustration space at the approved type scale. Keep title, body, illustration, divider, footer, signature, and safe margins inside the deterministic grid.
 
-Render every approved display field at its bundled fixed scale and region: `kicker` 24, cover `title` 90 or other `title` 72, `subtitle` 30, `body` 34, and `emphasis` 28. Include every display field in glyph and overflow preflight. Keep `must_keep` and `compressible` as validated workflow metadata; do not draw them a second time. Never shrink a field to make it fit.
+Render every approved display field at its bundled fixed scale: `kicker` 24, cover `title` 90 or other `title` 72, `subtitle` 30, `body` 34, and `emphasis` 28. Flow the fields downward using actual Maple Mono NF CN metrics and the bundled gaps; do not assign fixed-height copy boxes. Include every display field in glyph and layout preflight. Keep `must_keep` and `compressible` as validated workflow metadata; do not draw them a second time. Never shrink a field to make it fit.
+
+## Calculate the illustration region
+
+Use the fixed 1080×1440 canvas and the bundled layout contract:
+
+- keep 80 px left/right margins and 72 px top/bottom margins;
+- treat the kicker as the page header and reserve the measured footer for page number and signature;
+- place 24 px between non-empty copy blocks, 24 px before the divider, 20 px after it, and 40 px between illustration and footer;
+- start the illustration after the measured copy and divider, then extend it to the footer safety gap.
+
+Calculate `illustration_share` as:
+
+```text
+illustration box area
+────────────────────────────────────────────────────────────
+safe-column area from top margin to illustration bottom
+```
+
+The illustration box and safe column have the same width, so the ratio is also their height ratio. Require `illustration_share >= 0.5` for every page. If a page falls below 50%, return to Gate 1 and shorten or split its copy; never reduce type, margins, footer clearance, or the threshold.
+
+Run `scripts/calculate_layout.py --write <post-dir>` after preliminary copy/layout approval. Record its versioned fingerprint, copy bottom, divider, illustration box, and share in each manifest page. Any change to displayed copy, page type, font family, footer, canvas, or layout rules makes the fingerprint stale and requires recalculation.
 
 ## Create original line art
 
@@ -49,6 +70,8 @@ style anchor; no typography, letters, numbers, labels, signature, logo, or water
 
 Specify only the page's subject, relation, viewpoint, focal point, and needed anchor continuity. Ask for a transparent or clean background only when composition requires it. Keep lighting flat and detail sparse so deterministic typography remains dominant.
 
+Include the calculated illustration box width, height, and aspect ratio in every anchor and page-generation brief. Compose the focal subject for that box rather than relying on later cropping. The renderer may only scale the layer proportionally and center it inside the box.
+
 Exclude these concepts:
 
 - photorealism, stock photography, 3D rendering, glossy gradients, cinematic lighting, complex shadows, texture noise, and decorative clutter;
@@ -64,7 +87,7 @@ Use the character as observer, actor, or bearer of a problem; do not let it beco
 
 ## Build and pass anchors
 
-Create `style-anchor.png` after Gate 1 to demonstrate line quality, exact palette, whitespace, density, contrast, and texture without copying any eventual page composition. When characters are enabled, create `character-sheet.png` with neutral front, side, and action views that lock the approved character invariants.
+After Gate 1 and successful layout calculation, create `style-anchor.png` from the approved copy themes and calculated illustration boxes. Use the most constrained box to demonstrate line quality, exact palette, whitespace, density, contrast, and texture without copying any eventual page composition. When characters are enabled, create `character-sheet.png` with neutral front, side, and action views that lock the approved character invariants.
 
 Pass `visual-bible.yaml`, `style-anchor.png`, and the optional `character-sheet.png` to every generation. For revisions, also pass the current illustration and only the routed review actions. Do not describe anchors from memory or replace them with a reference URL.
 

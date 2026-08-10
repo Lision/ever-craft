@@ -5,7 +5,7 @@ description: Use when analyzing code structure, runtime behavior, architecture, 
 
 # Code Analysis
 
-你是一个代码分析专家。目标不是套模板，而是根据代码类型选出最能解释系统的分析维度，用 LLM 可理解、Markdown 可解析的 Mermaid 图表达核心结构与流程。最终报告必须经过独立 sub-agent 背靠背验证后才能交付。
+你是一个代码分析专家。目标不是套模板，而是根据代码类型选出最能解释系统的分析维度，用 LLM 可理解、Markdown 可解析的 Mermaid 图表达核心结构与流程，并把每张图渲染为可直接打开的 PNG、SVG。最终报告必须经过独立 sub-agent 背靠背验证后才能交付。
 
 ## 工作原则
 
@@ -20,8 +20,9 @@ description: Use when analyzing code structure, runtime behavior, architecture, 
 ## 强制执行
 
 - **强制背靠背验证**：交付前**必须**另起独立 sub-agent 验证分析产物；**不能**用当前 agent 自查替代。
-  - **Mermaid 渲染校验**：sub-agent **必须**使用 Mermaid CLI (`mmdc`) 渲染报告中的每个 Mermaid 代码块；**任一图渲染失败都必须**修复并重新验证。
+  - **Mermaid 渲染校验**：sub-agent **必须**使用本 skill 的 `scripts/render_mermaid.py`，通过 Mermaid CLI (`mmdc`) 把报告中的每个 Mermaid 代码块分别渲染为 PNG、SVG；**任一格式渲染失败都必须**修复并重新验证。
   - **代码证据校验**：sub-agent **必须**逐项核对关键结论、风险、`filename:line`、类型、函数、配置或调用链是否在项目中真实存在且语义一致。
+- **强制图像交付**：最终报告**必须**保留 Mermaid fenced block，并提供每张图的 PNG、SVG 绝对路径和总缓存目录；不能只交付 Mermaid 语法。
 
 ## 开始前判断
 
@@ -93,7 +94,7 @@ description: Use when analyzing code structure, runtime behavior, architecture, 
 - 图节点使用真实领域名词，避免 `step1`、`manager`、`helper` 这类泛称。
 - 图只表达关键结构，不把大段代码塞进节点。
 - 如果一种图不能解释清楚，拆成多张小图；不要做一张过大的万能图。
-- 每个 Mermaid 图都必须能被 Mermaid CLI 渲染，例如 `mmdc -i input.mmd -o output.svg` 或 `npx -p @mermaid-js/mermaid-cli mmdc -i input.mmd -o output.svg`。
+- 每个 Mermaid 图都必须通过 `scripts/render_mermaid.py` 调用 Mermaid CLI，基于同一份 `.mmd` 源文件同时生成 PNG、SVG。
 - 优先选择最贴近问题的图：
   - 流程/分支：`flowchart`
   - 调用交互：`sequenceDiagram`
@@ -102,6 +103,21 @@ description: Use when analyzing code structure, runtime behavior, architecture, 
   - 数据库/实体关系：`erDiagram`
   - 模块地图：`mindmap`
   - 系统边界：C4 Mermaid
+
+## Mermaid 图像渲染
+
+完成报告初稿后，把完整 Markdown 初稿写入系统临时或缓存目录中的 `report.md`；启动背靠背验证前执行：
+
+```bash
+python3 <skill-dir>/scripts/render_mermaid.py <report.md>
+```
+
+渲染脚本会提取报告中的全部 `mermaid` fenced block，并为每张图生成 `.mmd`、`.png`、`.svg`。默认输出到 `$XDG_CACHE_HOME/code-analysis/`；未设置 `XDG_CACHE_HOME` 时输出到系统临时目录下的 `code-analysis/`。每次执行使用独立子目录，不污染目标仓库。需要固定目录时传入 `--output-dir <absolute-path>`。每种格式默认限时 60 秒，复杂图确需延长时传入 `--timeout-seconds <seconds>`。
+
+- 优先使用 PATH 中的 `mmdc`；缺失时自动尝试 `npx -y -p @mermaid-js/mermaid-cli mmdc`。
+- 读取脚本生成的 `manifest.md`，把其中的“Mermaid 图像产物”追加到最终报告；不要只在过程日志中给出路径。
+- 保留内联 PNG 预览，并列出每张图的 PNG、SVG、`.mmd` 绝对路径，使不支持 Mermaid 的终端也能打开图像。
+- 把脚本返回非零、渲染超时、缺少任一 PNG/SVG 或产物为空都视为渲染失败；修复后重新运行。
 
 ## 输出格式
 
@@ -139,6 +155,20 @@ sequenceDiagram
 
 [简短说明图中关键结构；引用关键代码位置]
 
+### Mermaid 图像产物
+
+缓存目录：`/absolute/cache/path/code-analysis/report-run/`
+
+#### 图 1
+
+![图 1 PNG](</absolute/cache/path/code-analysis/report-run/diagram-01.png>)
+
+- PNG：`/absolute/cache/path/code-analysis/report-run/diagram-01.png`
+- SVG：`/absolute/cache/path/code-analysis/report-run/diagram-01.svg`
+- Mermaid 源文件：`/absolute/cache/path/code-analysis/report-run/diagram-01.mmd`
+
+[继续列出其余图；路径必须来自渲染脚本生成的 `manifest.md`，不能手写猜测。]
+
 ### 风险与改进建议
 
 [按严重程度 P0 > P1 > P2 排列。只列基于实际代码可证实的风险；若未发现明确风险，写「未发现基于当前代码可证实的核心风险」。]
@@ -169,7 +199,8 @@ sequenceDiagram
 sub-agent 必须检查：
 
 - Markdown 中每个 Mermaid fenced block 前是否有空行。
-- 每个 Mermaid block 是否可单独提取为 `.mmd` 并通过 Mermaid CLI (`mmdc`) 渲染为 SVG；失败时返回具体错误和对应图。
+- 使用 `scripts/render_mermaid.py` 把最终报告重新渲染到独立缓存目录，确认每个 Mermaid block 都能通过 Mermaid CLI (`mmdc`) 生成非空 PNG、SVG；失败时返回具体错误和对应图。
+- 报告列出的缓存目录及每个 PNG、SVG、`.mmd` 绝对路径是否存在、可读，并与对应 Mermaid block 一一匹配。
 - 报告中的每个关键结论是否能在代码中找到证据。
 - 所有 `filename:line`、类型、函数、配置、调用链是否真实存在，且被报告正确解释。
 - 风险是否基于实际代码，而不是泛泛而谈或脱离上下文的猜测。
@@ -177,7 +208,7 @@ sub-agent 必须检查：
 
 ### 失败处理
 
-- 如果 Mermaid 渲染失败，先修 Mermaid，再重新让 sub-agent 验证。
+- 如果 Mermaid 的 PNG 或 SVG 渲染失败，先修 Mermaid，再重新生成两种格式并让 sub-agent 验证。
 - 如果代码证据不成立，删除或修正对应结论，再重新让 sub-agent 验证。
-- 如果当前环境缺少 Mermaid CLI，必须先尝试使用 `npx -p @mermaid-js/mermaid-cli mmdc ...`；如果因网络或权限不可用，报告中明确说明未完成强制验证及原因，不能声称验证通过。
-- 只有 sub-agent 返回 Mermaid 渲染和代码证据均通过后，才能交付最终报告。
+- 如果当前环境缺少 Mermaid CLI，渲染脚本会尝试 `npx -y -p @mermaid-js/mermaid-cli mmdc`；如果因网络或权限不可用，报告中明确说明未完成强制验证及原因，不能声称验证通过。
+- 只有 sub-agent 返回 PNG/SVG 渲染、图像路径和代码证据均通过后，才能交付最终报告。
