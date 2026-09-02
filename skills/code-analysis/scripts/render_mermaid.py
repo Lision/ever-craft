@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract Mermaid blocks from a Markdown report and render PNG/SVG assets."""
+"""Extract Mermaid blocks from a Markdown report and render SVG assets."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ MERMAID_BLOCK = re.compile(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Render every Mermaid block in a Markdown report as PNG and SVG."
+        description="Render every Mermaid block in a Markdown report as SVG."
     )
     parser.add_argument("report", type=Path, help="Markdown report to render")
     parser.add_argument(
@@ -35,7 +35,7 @@ def parse_args() -> argparse.Namespace:
         "--timeout-seconds",
         type=float,
         default=60.0,
-        help="Maximum time for each PNG or SVG render (default: 60)",
+        help="Maximum time for each SVG render (default: 60)",
     )
     return parser.parse_args()
 
@@ -138,21 +138,20 @@ def markdown_destination(path: Path) -> str:
     return f"<{path}>"
 
 
-def build_manifest(output_dir: Path, assets: list[tuple[Path, Path, Path]]) -> str:
+def build_manifest(output_dir: Path, assets: list[tuple[Path, Path]]) -> str:
     lines = [
         "### Mermaid 图像产物",
         "",
         f"缓存目录：`{output_dir}`",
         "",
     ]
-    for index, (source, png, svg) in enumerate(assets, start=1):
+    for index, (source, svg) in enumerate(assets, start=1):
         lines.extend(
             [
                 f"#### 图 {index}",
                 "",
-                f"![图 {index} PNG]({markdown_destination(png)})",
+                f"![图 {index} SVG]({markdown_destination(svg)})",
                 "",
-                f"- PNG：[打开]({markdown_destination(png)}) — `{png}`",
                 f"- SVG：[打开]({markdown_destination(svg)}) — `{svg}`",
                 f"- Mermaid 源文件：[打开]({markdown_destination(source)}) — `{source}`",
                 "",
@@ -180,15 +179,13 @@ def main() -> int:
     output_dir = create_output_dir(report, args.output_dir)
     try:
         command = mermaid_command()
-        assets: list[tuple[Path, Path, Path]] = []
+        assets: list[tuple[Path, Path]] = []
         for index, diagram in enumerate(diagrams, start=1):
             source = output_dir / f"diagram-{index:02d}.mmd"
-            png = output_dir / f"diagram-{index:02d}.png"
             svg = output_dir / f"diagram-{index:02d}.svg"
             source.write_text(diagram, encoding="utf-8")
-            render(command, source, png, args.timeout_seconds)
             render(command, source, svg, args.timeout_seconds)
-            assets.append((source, png, svg))
+            assets.append((source, svg))
 
         manifest = output_dir / "manifest.md"
         manifest.write_text(build_manifest(output_dir, assets), encoding="utf-8")
@@ -197,7 +194,7 @@ def main() -> int:
         print(f"Partial output directory: {output_dir}", file=sys.stderr)
         return 1
 
-    print(f"Rendered {len(assets)} Mermaid diagram(s) as PNG and SVG.")
+    print(f"Rendered {len(assets)} Mermaid diagram(s) as SVG.")
     print(f"Output directory: {output_dir}")
     print(f"Markdown manifest: {manifest}")
     return 0
