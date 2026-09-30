@@ -79,7 +79,7 @@ Require a current calculated layout for every page and a zero exit code from pre
 python3 <skill-dir>/scripts/validate_manifest.py --phase pre-generation <post-dir>
 ```
 
-This phase validates both approval records and timestamps, current layout fingerprints, the 50% illustration minimum, required anchors, phase states, retry limits, consecutive unresolved issues, canonical non-symlinked output paths, containment, source, and visual-bible files. With no target every page is a generation target. For a local revision, repeat `--page-id`: target pages must be `generating` or `revising`, and only their illustrations may be missing. Non-target pages may retain any complete-phase state (`generating`, `reviewing`, `revising`, `passed`, `limit_reached`), but their illustrations and all other deterministic constraints must remain valid:
+This phase validates both approval records and timestamps, current layout fingerprints, the 50% illustration minimum, required anchors, phase states, retry limits, consecutive unresolved non-minor issues, canonical non-symlinked output paths, containment, source, and visual-bible files. With no target every page is a generation target. For a local revision, repeat `--page-id`: target pages must be `generating` or `revising`, and only their illustrations may be missing. Non-target pages may retain any complete-phase state (`generating`, `reviewing`, `revising`, `passed`, `limit_reached`), but their illustrations and all other deterministic constraints must remain valid:
 
 ```bash
 python3 <skill-dir>/scripts/validate_manifest.py --phase pre-generation \
@@ -180,7 +180,7 @@ If feedback arrives at Gate 3, keep delivery pending, clear the provisional `fin
 
 - Allow at most three whole-set image-generation rounds and three image generations for any page. Initial generation counts; layout-only rerenders do not.
 - Require independent review after each image-generation round.
-- Stop retrying an issue after it remains unresolved for two consecutive review rounds, even if another counter remains.
+- Stop retrying a non-minor issue after it remains unresolved for two consecutive review rounds, even if another counter remains. Exclude explicitly marked `minor` suggestions from this stopping rule; preserve the existing treatment of first-round and partially resolved issues.
 - Permit `passed` only when no `critical` or `major` issue remains. A reviewer may pass with recorded `minor` suggestions that do not harm reading or consistency.
 - When a counter or consecutive-unresolved limit is reached, choose and retain the best available version, list its unresolved limitation, set `limit_reached`, and stop automatic generation.
 - Require a Gate 3 explicit user decision for both `passed` and `limit_reached`. Record the decision and status in `manifest.yaml` first; then write `reviews/final.yaml` once as a derived immutable snapshot.

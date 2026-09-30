@@ -192,7 +192,7 @@ def _review_issue_ids(review: dict[str, Any]) -> set[str]:
         if not isinstance(group, list):
             continue
         for issue in group:
-            if not isinstance(issue, dict):
+            if not isinstance(issue, dict) or issue.get("severity") == "minor":
                 continue
             issue_id = issue.get("id")
             resolution = issue.get("resolution")

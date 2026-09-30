@@ -768,6 +768,7 @@ class ManifestValidationTests(unittest.TestCase):
                                 "issues": [
                                     {
                                         "id": "p1-image-01",
+                                        "severity": "major",
                                         "resolution": "unresolved",
                                     }
                                 ],
@@ -786,6 +787,37 @@ class ManifestValidationTests(unittest.TestCase):
             any("p1-image-01 is unresolved in two consecutive review rounds" in e for e in errors),
             errors,
         )
+
+    def test_consecutive_review_limit_ignores_only_minor_suggestions(self):
+        reviews = self.project / "reviews"
+        reviews.mkdir()
+        for scope in ("page", "global"):
+            for severity in ("minor", "major", "critical", None):
+                with self.subTest(scope=scope, severity=severity):
+                    for round_number in (1, 2):
+                        issue = {"id": "repeated-issue"}
+                        if severity is not None:
+                            issue["severity"] = severity
+                        if round_number == 2:
+                            issue["resolution"] = "unresolved"
+                        review = {"round": round_number}
+                        if scope == "global":
+                            review["global_issues"] = [issue]
+                        else:
+                            review["pages"] = [{"page": "p01", "issues": [issue]}]
+                        (reviews / f"round-{round_number:02d}.yaml").write_text(
+                            yaml.safe_dump(review), encoding="utf-8"
+                        )
+                    errors = validate_project(
+                        self.project, phase="pre-generation", page_ids=["p01"]
+                    )
+                    if severity == "minor":
+                        self.assertEqual(errors, [])
+                    else:
+                        self.assertTrue(
+                            any("repeated-issue is unresolved in two consecutive" in e for e in errors),
+                            errors,
+                        )
 
     def test_targeted_pre_generation_only_permits_missing_target_illustrations(self):
         self.mutate(

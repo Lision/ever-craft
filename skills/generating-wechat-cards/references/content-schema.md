@@ -194,6 +194,8 @@ Write one immutable file after each independent review. Use `pass` or `revise` f
 
 Use the existing issue fields to name the exact wording, rendered defect, or failed cover criterion and give an actionable correction. For user-reported duplicate illustrations, file the issue under the later page, identify the earlier page and repeated mechanism in `issue`, and specify the different expression in `action`. Do not add automated whole-set illustration duplication checks. A pass requires the copy and cover criteria in `SKILL.md` and the normal quality checks, not an automated guarantee of distinct illustrations.
 
+Give every issue a `critical`, `major`, or `minor` severity. Keep harmless style preferences `minor`: they neither initiate automatic image generation nor count toward consecutive-unresolved stopping. Explicitly marked minor issues are excluded; reviews lacking severity retain the validator's existing conservative stopping behavior. Keep first-round and partial-resolution handling unchanged.
+
 ```yaml
 round: 2
 generation_round: 2
@@ -293,7 +295,7 @@ The snapshot must match `manifest.yaml`; never change the snapshot to record a l
 
 ## Gate 3 manifest record: limit reached
 
-When the set or a page reaches three image generations, or the same issue is unresolved for two consecutive rounds, update `manifest.yaml` first. Select the best existing version rather than merely preserving failed outputs, and keep the decision pending while asking Gate 3:
+When the set or a page reaches three image generations, or the same non-minor issue is unresolved for two consecutive rounds, update `manifest.yaml` first. Select the best existing version rather than merely preserving failed outputs, and keep the decision pending while asking Gate 3:
 
 ```yaml
 post:
