@@ -619,16 +619,56 @@ class ManifestValidationTests(unittest.TestCase):
                         lambda data: data["post"].update(status="generating"),
                     )
 
-    def test_pre_generation_requires_every_page_to_be_generating_or_revising(self):
+    def test_targeted_pre_generation_preserves_non_target_complete_states(self):
+        for status in ("generating", "reviewing", "revising", "passed", "limit_reached"):
+            with self.subTest(status=status):
+                self.mutate(
+                    "manifest.yaml",
+                    lambda data, status=status: data["pages"][1].update(status=status),
+                )
+                self.assertEqual(
+                    validate_project(self.project, phase="pre-generation", page_ids=["p01"]),
+                    [],
+                )
+
+    def test_pre_generation_requires_target_pages_to_be_generating_or_revising(self):
         self.mutate(
             "manifest.yaml",
-            lambda data: data["pages"][1].update(status="reviewing"),
+            lambda data: data["pages"][1].update(status="passed"),
         )
-        errors = validate_project(
-            self.project, phase="pre-generation", page_ids=["p01"]
+        for targets in (None, ["p02"], ["p01", "p02"]):
+            with self.subTest(targets=targets):
+                errors = validate_project(
+                    self.project, phase="pre-generation", page_ids=targets
+                )
+                self.assertTrue(
+                    any("pages[1].status is not valid for pre-generation" in e for e in errors),
+                    errors,
+                )
+
+    def test_targeted_pre_generation_rejects_non_target_unready_states(self):
+        for status in ("draft", "script_pending", "script_approved", "anchor_pending", "anchor_approved"):
+            with self.subTest(status=status):
+                self.mutate(
+                    "manifest.yaml",
+                    lambda data, status=status: data["pages"][1].update(status=status),
+                )
+                errors = validate_project(
+                    self.project, phase="pre-generation", page_ids=["p01"]
+                )
+                self.assertTrue(
+                    any("pages[1].status is not valid for complete" in e for e in errors),
+                    errors,
+                )
+
+    def test_targeted_pre_generation_rejects_non_target_stale_layout(self):
+        self.mutate(
+            "manifest.yaml",
+            lambda data: data["pages"][1].update(status="passed", title="已经修改的标题"),
         )
+        errors = validate_project(self.project, phase="pre-generation", page_ids=["p01"])
         self.assertTrue(
-            any("pages[1].status is not valid for pre-generation" in e for e in errors),
+            any("pages[1].layout.fingerprint is stale" in e for e in errors),
             errors,
         )
 
@@ -748,6 +788,10 @@ class ManifestValidationTests(unittest.TestCase):
         )
 
     def test_targeted_pre_generation_only_permits_missing_target_illustrations(self):
+        self.mutate(
+            "manifest.yaml",
+            lambda data: data["pages"][1].update(status="passed"),
+        )
         (self.project / "illustrations" / "p01-v01.png").unlink()
         self.assertEqual(
             validate_project(

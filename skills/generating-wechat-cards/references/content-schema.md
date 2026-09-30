@@ -128,6 +128,8 @@ Every `must_keep` item must appear verbatim within one displayed `title`, `kicke
 
 Use only these post workflow states: `draft`, `script_pending`, `script_approved`, `anchor_pending`, `anchor_approved`, `generating`, `reviewing`, `revising`, `passed`, or `limit_reached`. Record every invalidation with affected page, invalidated artifacts, reason, originating issue, and timestamp.
 
+For targeted pre-generation validation, set the post and target pages to `generating` or `revising`. Non-target pages can retain any complete-phase state: `generating`, `reviewing`, `revising`, `passed`, or `limit_reached`. Their illustrations must exist and their layouts and other deterministic constraints must still be valid. Omitting `--page-id` makes every page a generation target.
+
 ## `visual-bible.yaml`
 
 Record the complete approved visual system. Keep all eight palette tokens exact; per-post replacement themes are forbidden. Gate 2 approves only the style and optional character anchors made with those fixed values. Use null font paths only when local discovery can locate and verify both required Maple weights.
@@ -190,7 +192,7 @@ Set `illustration.character_enabled: false`, `illustration.character: null`, and
 
 Write one immutable file after each independent review. Use `pass` or `revise` for a round verdict. Give each atomic issue exactly one `owner` from `content`, `image`, `layout`, or `system`. Use `depends_on` only for issue IDs that must be resolved first. On re-review, set every previously reported issue's `resolution` to exactly `resolved`, `partially_resolved`, or `unresolved`.
 
-Use the existing issue fields to name the exact wording, rendered defect, or failed cover criterion and give an actionable correction. A pass requires the copy and cover criteria in `SKILL.md` and the normal quality checks.
+Use the existing issue fields to name the exact wording, rendered defect, or failed cover criterion and give an actionable correction. For user-reported duplicate illustrations, file the issue under the later page, identify the earlier page and repeated mechanism in `issue`, and specify the different expression in `action`. Do not add automated whole-set illustration duplication checks. A pass requires the copy and cover criteria in `SKILL.md` and the normal quality checks, not an automated guarantee of distinct illustrations.
 
 ```yaml
 round: 2
@@ -258,6 +260,8 @@ finalization:
 ```
 
 After explicit approval, write `approvals.delivery.status: user_approved`, `decision: approve_delivery`, and `decided_at` to `manifest.yaml` before creating `reviews/final.yaml`. If the user declines, record `status: user_declined`, `decision: decline_delivery`, and the timestamp instead; do not deliver.
+
+Treat a request to revise, including user-reported illustration duplication, as editing feedback rather than a final delivery decision. While retry limits allow, set `post.status: revising`, keep delivery pending with null `decision` and `decided_at`, and clear provisional `finalization`. Record the feedback and routed issue in manifest invalidations, then run the normal repair and review cycle. Present Gate 3 again afterward. Do not create `reviews/final.yaml` until a final user decision; if already at a stopping limit, use the limit-reached flow below instead.
 
 ## `reviews/final.yaml`: pass snapshot
 

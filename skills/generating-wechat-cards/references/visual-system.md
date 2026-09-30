@@ -48,6 +48,14 @@ Use contrast, humor, analogy, or personification when it makes that hook clearer
 
 Judge the pair together: identify the reader's reason to continue, what the image contributes beyond the title, and where the source delivers on the promise. A literal restatement of the title, an unrelated joke, or a merely decorative illustration requires revision. Do not require measured click-through rates or fabricate an effectiveness score.
 
+## Differentiate planned metaphors
+
+Read all page claims and metaphors together during planning, including non-adjacent pages, cover, and summary. Compare the core scene, the subject's action or relationship, and the meaning carried by the metaphor. Change a later concept that tells the same visual story; a new viewpoint, pose, or differently shaped prop alone is insufficient.
+
+Preserve the original character and visual anchors across pages. For example, the same character dragging a list that loses context cards and later dragging a board that loses notes repeat the same mechanism. A later scene where that character chooses among containers for goals, constraints, and next steps can express a distinct claim while retaining continuity.
+
+Keep this check at the brief level. The user judges duplication between finished illustrations; do not run automatic whole-set image comparisons or similarity scoring. When the user reports a duplicate, replace the later expression and review only the reported pair for that repair. Originality checks against external references remain separate and required.
+
 ## Calculate the illustration region
 
 Use the fixed 1080×1440 canvas and the bundled layout contract:

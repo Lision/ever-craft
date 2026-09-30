@@ -434,10 +434,10 @@ def validate_project(
             if PAGE_ID_PATTERN.fullmatch(page_id) is None:
                 errors.append(f"{field}.id must be a safe page-id segment")
         is_target = isinstance(page_id, str) and page_id in target_page_ids
-        if phase == "pre-generation":
-            _phase_state(page.get("status"), f"{field}.status", phase, errors)
-        elif phase == "complete":
-            _phase_state(page.get("status"), f"{field}.status", phase, errors)
+        page_phase = (
+            "pre-generation" if phase == "pre-generation" and is_target else "complete"
+        )
+        _phase_state(page.get("status"), f"{field}.status", page_phase, errors)
 
         page_type = page.get("type")
         if not isinstance(page_type, str):
