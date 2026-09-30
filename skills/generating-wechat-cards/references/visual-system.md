@@ -25,7 +25,7 @@ Use `Maple Mono NF CN` for every composed text element. Provide regular and bold
 
 ## Choose one of four layouts
 
-1. **Cover (`cover`)** — Use the largest title, least copy, strongest original metaphor, and broadest whitespace. Establish the whole article's thesis.
+1. **Cover (`cover`)** — Use the largest title, least copy, strongest original metaphor, and broadest whitespace. Make readers want to open the article through a compelling copy–illustration combination grounded in its thesis.
 2. **Standard chapter (`standard`)** — Explain one chapter claim with one illustration region and a small number of supporting text blocks.
 3. **Comparison/list (`comparison` or `list`)** — Use only for genuinely parallel, classified, sequential, or contrasted material. Give peer items equal visual rank; do not force prose into boxes.
 4. **Summary (`summary`)** — Recombine the thesis into a conclusion, action, or interaction prompt. Do not repeat the entire article.
@@ -33,6 +33,20 @@ Use `Maple Mono NF CN` for every composed text element. Provide regular and bold
 Split a page when its single claim cannot leave enough illustration space at the approved type scale. Keep title, body, illustration, divider, footer, signature, and safe margins inside the deterministic grid.
 
 Render every approved display field at its bundled fixed scale: `kicker` 24, cover `title` 90 or other `title` 72, `subtitle` 30, `body` 34, and `emphasis` 28. Flow the fields downward using actual Maple Mono NF CN metrics and the bundled gaps; do not assign fixed-height copy boxes. Include every display field in glyph and layout preflight. Keep `must_keep` and `compressible` as validated workflow metadata; do not draw them a second time. Never shrink a field to make it fit.
+
+## Build a cover that earns the next read
+
+Compare different copy–illustration combinations before Gate 1, then select one and explain its reading hook. Start from a concrete reader problem, a question, a rhetorical challenge, or a counterintuitive implication of the source. Keep the language natural and specific; do not merely summarize the topic or attach a question mark to it. The article must answer the question or substantiate the promised insight.
+
+Use contrast, humor, analogy, or personification when it makes that hook clearer. Let the copy pose the tension and the illustration add an unexpected relationship, consequence, or emotion. Keep one readable focal idea within the same minimal editorial line art, fixed palette, flat treatment, and sparse detail. These are expressive options, not requirements to combine every device. With characters disabled, use object or spatial analogies instead.
+
+| Combination | Assessment |
+| --- | --- |
+| “任务清单与上下文？” + an ordinary checklist | A topic label with a question mark; neither element gives a concrete reason to keep reading. |
+| “清单写满了，先做哪件？” + a character holding an enormous checklist at a fork with no directional cues | The copy names a recognizable dilemma; the image adds the contrast between many recorded tasks and missing decision context. Use only when supported by the source. |
+| “一个清单，让效率暴涨十倍！” + a triumphant character | An unsupported outcome for the fixture article; attention alone does not make a valid cover. |
+
+Judge the pair together: identify the reader's reason to continue, what the image contributes beyond the title, and where the source delivers on the promise. A literal restatement of the title, an unrelated joke, or a merely decorative illustration requires revision. Do not require measured click-through rates or fabricate an effectiveness score.
 
 ## Calculate the illustration region
 

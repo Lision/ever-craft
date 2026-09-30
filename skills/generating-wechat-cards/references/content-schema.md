@@ -190,6 +190,8 @@ Set `illustration.character_enabled: false`, `illustration.character: null`, and
 
 Write one immutable file after each independent review. Use `pass` or `revise` for a round verdict. Give each atomic issue exactly one `owner` from `content`, `image`, `layout`, or `system`. Use `depends_on` only for issue IDs that must be resolved first. On re-review, set every previously reported issue's `resolution` to exactly `resolved`, `partially_resolved`, or `unresolved`.
 
+Use the existing issue fields to name the exact wording, rendered defect, or failed cover criterion and give an actionable correction. A pass requires the copy and cover criteria in `SKILL.md` and the normal quality checks.
+
 ```yaml
 round: 2
 generation_round: 2
@@ -219,14 +221,18 @@ pages:
           - p3-content-01
         resolution: partially_resolved
       - id: p3-layout-01
-        severity: minor
+        severity: major
         owner: layout
-        issue: 底部信息块文字过密
-        action: 合并信息块并增加上下留白
+        issue: 当前成图仍显示上一版副标题，与已确认文案和当前有效布局不符
+        action: 使用当前已确认输入重新渲染 p03，保留仍适配插图区域的插画
+        depends_on:
+          - p3-content-01
         resolution: unresolved
 ```
 
 For a first-round issue, omit `resolution` because no previous correction exists. Do not use `area`, joint owners, free-form resolution values, or a compound issue covering unrelated corrections.
+
+For crowding caused by copy, use `owner: content` with an action such as “合并重复说明，重新计算布局并提交 Gate 1”; rerendering identical valid inputs will not change the result. Route an unclear illustration composition to `image`. Fixed type, spacing, palette, and the illustration minimum are not reviewer-adjustable layout options.
 
 ## Gate 3 manifest record: pass
 
@@ -271,7 +277,7 @@ remaining_issues:
     severity: minor
     owner: layout
     issue: 页脚上方留白略多，但不影响阅读或一致性
-    action: 用户要求时再微调
+    action: 保留固定页脚与留白，仅记录审美建议
     resolution: unresolved
 user_approval:
   status: approved

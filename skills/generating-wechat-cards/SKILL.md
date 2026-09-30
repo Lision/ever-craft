@@ -49,7 +49,7 @@ Explicit approval means a clear user decision at that gate; silence, prior prefe
 
 1. Save the original article or outline, user overrides, and reference links in `source.md`.
 2. Create one cover and normally three to eight section cards; add a summary only when it advances the conclusion. Use `cover`, `standard`, `comparison`, `list`, or `summary` page types.
-3. Give every page one central claim. Draft its copy and preliminary layout from the original input. Split dense content instead of shrinking type. Preserve user-designated sentences.
+3. Give every page one central claim. Draft natural, unambiguous Chinese copy from the original input; use the copy checks below before approval. Compare different cover copy–illustration combinations using the cover criteria in `references/visual-system.md`, then select one for Gate 1. Split dense content instead of shrinking type. Preserve user-designated sentences.
 4. Define the title, kicker, non-empty subtitle, body, emphasis list, `must_keep` and `compressible` metadata, visual metaphor, text-free illustration prompt, dependencies, canonical output paths, and retry counters in `manifest.yaml`. Every `must_keep` item must be a verbatim substring of one displayed copy field; `compressible` is non-displayed editing metadata.
 5. Prepare the thesis, page count and order, each page's claim and copy, page type, and metaphor for Gate 1.
 6. While still in `script_pending`, create `visual-bible.yaml` with the fixed visual contract, then calculate and atomically record every page's actual text flow, divider, illustration box, and illustration share:
@@ -59,8 +59,15 @@ python3 <skill-dir>/scripts/calculate_layout.py --write <post-dir>
 ```
 
 7. Treat the usable content area as the full-width safe column between the top margin and the illustration/footer boundary. Flow draft copy downward at fixed type scales, reserve the footer and all configured gaps, and assign the remaining space to the illustration. Require every illustration box to occupy at least 50% of that usable area. If any page fails, stay in `script_pending`, shorten or split the copy, and rerun the calculation before presenting Gate 1. Do not create anchors yet.
-8. Present Gate 1 with the thesis, page count and order, each page's claim and copy, page type, calculated layout, and metaphor. Recalculate any copy edited during approval before asking the user to approve the revised script. Do not run pre-generation validation at this drafting stage: it requires Gate 2 and anchors.
+8. Present Gate 1 with the thesis, page count and order, each page's claim and copy, page type, calculated layout, and metaphor; explain the selected cover's reading hook and how its illustration adds meaning. Recalculate any copy edited during approval before asking the user to approve the revised script. Do not run pre-generation validation at this drafting stage: it requires Gate 2 and anchors.
 9. After explicit Gate 1 approval, generate the exact visual anchors from the approved copy plus all calculated illustration boxes. Use the most constrained box to prove the style still works. Omit `character-sheet.png` when characters are disabled. Present Gate 2 before batch generation.
+
+## Check copy and cover quality
+
+- Before Gate 1, read every displayed field in page order. Require clear subjects and referents, explicit logical relationships, consistent terms, and idiomatic Chinese that reads smoothly. Rewrite ambiguous, compressed, or awkward sentences without changing the source claim or designated wording.
+- After rendering, inspect the actual cards at normal reading size for legibility, disruptive line breaks, hierarchy, contrast, and overflow. A successful schema or layout check does not prove semantic or visual readability.
+- Require the cover to give readers a concrete reason to continue and make its copy and illustration reinforce each other. Check the criteria and examples in `references/visual-system.md`; a topic summary with a question mark is insufficient.
+- Classify wording that obstructs understanding, an unsupported cover promise, or a cover with no reading hook or meaningful copy–image connection as at least `major`. Keep harmless stylistic preferences `minor`; do not generate another image round for minor suggestions alone. Route each issue by its actual cause using the owner table below.
 
 ## Validate and render
 
@@ -118,8 +125,9 @@ Role: independent reviewer; inspect but do not modify any project artifact.
 Inputs: source.md; the user-approved card script and manifest.yaml;
 visual-bible.yaml; style-anchor.png; optional character-sheet.png; all current cards;
 and the prior immutable review from round 2 onward.
-Task: check page accuracy, metaphor, hierarchy, overflow, contrast, noise, cover strength;
-then check series consistency, progression, repetition, density, cohesion, and originality.
+Task: apply the copy and cover quality checks above; check page accuracy, metaphor,
+hierarchy, overflow, contrast, and noise; then check series consistency, progression,
+redundant copy, density, cohesion, and originality against external references.
 Output: one round review matching references/content-schema.md. Give every atomic issue
 id, severity, exactly one owner, issue, action, optional depends_on, and resolution when
 rechecking. Use only resolved, partially_resolved, or unresolved for resolution.
@@ -137,7 +145,7 @@ Resolve cross-page and `system` issues before page-local issues. Within a page, 
 | --- | --- |
 | `content` | Main agent revises manifest copy in `script_pending`, recalculates layout before repeating Gate 1, and invalidates every dependent anchor/image/card whose input changed. Route copy shortening, merging text blocks, and wording or explicit line-break changes here. |
 | `image` | Generation sub-agent receives the original brief, current image, anchors, and routed action; render the replacement afterward. |
-| `layout` | Preserve the illustration and rerender only. Layout-only rerenders consume no image-generation count. |
+| `layout` | Recalculate stale geometry when necessary and rerender a stale, missing, or incorrectly rendered card using current authorized inputs. Preserve the illustration when its box remains valid. The same valid inputs reproduce the same layout: route crowding caused by copy to `content` and composition problems to `image`; never propose arbitrary changes to fixed spacing, type, or palette. Rerenders consume no image-generation count. |
 | `system` | Main agent updates `visual-bible.yaml`, invalidates every affected page, and returns to Gate 2 when the visual system changes. |
 
 Use this revision dispatch contract:
