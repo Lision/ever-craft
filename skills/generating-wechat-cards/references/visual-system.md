@@ -51,9 +51,9 @@ illustration box area
 safe-column area from top margin to illustration bottom
 ```
 
-The illustration box and safe column have the same width, so the ratio is also their height ratio. Require `illustration_share >= 0.5` for every page. If a page falls below 50%, return to Gate 1 and shorten or split its copy; never reduce type, margins, footer clearance, or the threshold.
+The illustration box and safe column have the same width, so the ratio is also their height ratio. Require `illustration_share >= 0.5` for every page. If a page falls below 50%, shorten or split its copy in `script_pending`, then recalculate before presenting Gate 1; invalidate any prior script approval if the copy changes. Never reduce type, margins, footer clearance, or the threshold.
 
-Run `scripts/calculate_layout.py --write <post-dir>` after preliminary copy/layout approval. Record its versioned fingerprint, copy bottom, divider, illustration box, and share in each manifest page. Any change to displayed copy, page type, font family, footer, canvas, or layout rules makes the fingerprint stale and requires recalculation.
+Run `scripts/calculate_layout.py --write <post-dir>` on the draft before Gate 1. Record its versioned fingerprint, copy bottom, divider, illustration box, and share in each manifest page. Any change to displayed copy, page type, font family, footer, canvas, or layout rules makes the fingerprint stale and requires recalculation. Approval alone does not change geometry; retain the valid calculation when its inputs are unchanged.
 
 ## Create original line art
 

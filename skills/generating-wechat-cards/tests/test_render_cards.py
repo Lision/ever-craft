@@ -419,6 +419,42 @@ class CardRendererTests(unittest.TestCase):
         output = render_card(self.project, "p01")
         self.assertTrue(output.is_file())
 
+    def test_calculate_layout_preflights_unapproved_script_without_anchors(self):
+        manifest_path = self.project / "manifest.yaml"
+        manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        manifest["post"]["status"] = "script_pending"
+        manifest["approvals"] = {
+            "script": {"status": "pending"},
+            "anchor": {"status": "pending"},
+        }
+        for page in manifest["pages"]:
+            page["status"] = "script_pending"
+            page.pop("layout")
+        manifest_path.write_text(yaml.safe_dump(manifest), encoding="utf-8")
+        (self.project / "style-anchor.png").unlink()
+        (self.project / "character-sheet.png").unlink()
+        for illustration in (self.project / "illustrations").iterdir():
+            illustration.unlink()
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SKILL_DIR / "scripts" / "calculate_layout.py"),
+                "--write",
+                str(self.project),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calculated = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        for page in calculated["pages"]:
+            self.assertGreaterEqual(page.pop("layout")["illustration_share"], 0.5)
+        self.assertEqual(calculated, manifest)
+        self.assertFalse((self.project / "cards").exists())
+
     def test_calculate_layout_cli_failure_keeps_manifest_unchanged(self):
         self.mutate(
             "manifest.yaml",
