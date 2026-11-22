@@ -11,6 +11,7 @@ There is no package manager or build system configured at the root. Use lightwei
 - `rg --files` lists tracked project files quickly.
 - `sed -n '1,80p' skills/generating-wechat-cards/SKILL.md` inspects skill front matter and opening instructions.
 - `git diff --check` detects trailing whitespace and patch formatting issues.
+- `python3 -B -m unittest discover -s skills/frontend-pr/tests -v` validates the UI comparison script on macOS with Swift.
 - `mmdc -i input.mmd -o output.svg` validates Mermaid diagrams when editing analysis examples or generated reports. If `mmdc` is unavailable, use `npx -p @mermaid-js/mermaid-cli mmdc -i input.mmd -o output.svg`.
 
 ## Coding Style & Naming Conventions
@@ -19,7 +20,7 @@ Write documentation in Markdown with short, imperative instructions. Skill files
 
 ## Testing Guidelines
 
-No automated test suite is currently defined. Validate changes by reviewing rendered Markdown and checking any Mermaid blocks with Mermaid CLI. For skill behavior changes, test against a small real repository or fixture and verify that instructions are actionable, scoped, and do not rely on unstated context. When adding scripts later, colocate focused fixtures with the relevant skill and document the exact command here.
+Run the affected skill's tests when available. Validate documentation changes by reviewing rendered Markdown and checking any Mermaid blocks with Mermaid CLI. For skill behavior changes, test against a small real repository or fixture and verify that instructions are actionable, scoped, and do not rely on unstated context. When adding scripts, colocate focused fixtures with the relevant skill and document the exact command here.
 
 ## Commit & Pull Request Guidelines
 

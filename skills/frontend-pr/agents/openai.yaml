@@ -1,0 +1,3 @@
+interface:
+  display_name: "Frontend PR"
+  short_description: "Publish a worktree PR with risk notes and UI comparisons"
